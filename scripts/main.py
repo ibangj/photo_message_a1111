@@ -216,7 +216,7 @@ def on_app_started(demo: FastAPI):
             image: str = Body(...),
             name: str = Body(...),
             message: str = Body(...),
-            display_app_url: str = Body(None)
+            new_display_url: str = Body(None, alias="display_app_url")  # Renamed parameter
         ):
             try:
                 print(f"Received photo from {name} with message: {message}")
@@ -235,9 +235,9 @@ def on_app_started(demo: FastAPI):
                 print(f"Added new photo to queue. Total photos: {len(photos)}")
                 
                 # Update display app URL if provided
-                if display_app_url:
+                if new_display_url:
                     global display_app_url
-                    display_app_url = display_app_url
+                    display_app_url = new_display_url
                     print(f"Updated display app URL to: {display_app_url}")
                 
                 return {"status": "success", "message": "Photo received successfully"}

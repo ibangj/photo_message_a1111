@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from datetime import datetime
-from .main import PhotoMessage, photos, display_app_url
+from scripts.main import PhotoMessage, photos, display_app_url  # Changed from relative to absolute import
 
 class PhotoData(BaseModel):
     image: str
