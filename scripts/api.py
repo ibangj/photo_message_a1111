@@ -10,7 +10,7 @@ class PhotoData(BaseModel):
     display_app_url: str = None  # Optional display app URL
 
 def on_app_started(demo: FastAPI):
-    @demo.post("/photo_message/receive")
+    @demo.post("/sdapi/v1/photo_message/receive")
     async def receive_photo(data: PhotoData):
         try:
             # Update display app URL if provided
@@ -29,7 +29,9 @@ def on_app_started(demo: FastAPI):
             
             # Add to queue
             photos.append(photo)
+            print(f"Added new photo from {data.name} to queue")
             
             return {"status": "success", "message": "Photo received"}
         except Exception as e:
+            print(f"Error in receive_photo: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e)) 
