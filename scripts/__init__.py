@@ -151,7 +151,8 @@ def on_ui_tabs():
                         row_count=10,
                         col_count=(3, "fixed"),
                         interactive=True,
-                        elem_id="photo_list"
+                        elem_id="photo_list",
+                        value=[[p.timestamp, p.name, p.message] for p in photos]  # Initialize with current photos
                     )
                     refresh_btn = gr.Button("🔄", size="sm")
                 
@@ -167,16 +168,30 @@ def on_ui_tabs():
                     with gr.Row():
                         send_to_img2img = gr.Button("Send to img2img", variant="primary")
                         send_to_txt2img = gr.Button("Use as ControlNet input", variant="primary")
-                    status_text = gr.Textbox(label="Status", interactive=False)
+                    status_text = gr.Textbox(label="Status", interactive=False, value="No image selected")
             
             def update_photo_list():
-                return [[p.timestamp, p.name, p.message] for p in photos]
+                photo_data = [[p.timestamp, p.name, p.message] for p in photos]
+                print(f"[Photo Message] Updating photo list with {len(photo_data)} photos")
+                return photo_data
             
-            def on_select(evt: gr.SelectData):
+            def on_select(evt: gr.SelectData, current_value):
                 try:
                     print(f"[Photo Message] Selection event: {evt.index}")
-                    timestamp = photo_list.value[evt.index[0]][0]
+                    print(f"[Photo Message] Current dataframe value: {current_value}")
+                    
+                    if not current_value or len(current_value) <= evt.index[0]:
+                        print("[Photo Message] No valid selection in dataframe")
+                        return None
+                        
+                    timestamp = current_value[evt.index[0]][0]
                     print(f"[Photo Message] Selected timestamp: {timestamp}")
+                    
+                    # Debug the photos list
+                    print(f"[Photo Message] Current photos in memory: {len(photos)}")
+                    for p in photos:
+                        print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
+                    
                     image = get_photo_by_timestamp(timestamp)
                     if image is not None:
                         print("[Photo Message] Successfully loaded image")
@@ -224,12 +239,9 @@ def on_ui_tabs():
             
             # Wire up the events
             refresh_btn.click(update_photo_list, outputs=[photo_list])
-            photo_list.select(on_select, outputs=[preview_image])
+            photo_list.select(on_select, inputs=[photo_list], outputs=[preview_image])
             send_to_img2img.click(send_to_img2img_tab, inputs=[preview_image], outputs=[status_text])
             send_to_txt2img.click(send_to_txt2img_tab, inputs=[preview_image], outputs=[status_text])
-            
-            # Initialize the list
-            photo_list.value = update_photo_list()
             
         print("[Photo Message] UI tab created successfully")
         return [(photo_message_tab, "Photo Message", "photo_message_a1111")]
