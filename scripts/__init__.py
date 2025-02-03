@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import io
 from PIL import Image
+import pandas as pd
 
 print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
@@ -135,6 +136,13 @@ def get_photo_by_timestamp(timestamp):
                 return None
     return None
 
+def update_photo_list():
+    photo_data = [[p.timestamp, p.name, p.message] for p in photos]
+    print(f"[Photo Message] Updating photo list with {len(photo_data)} photos")
+    # Convert to DataFrame
+    df = pd.DataFrame(photo_data, columns=["Time", "Name", "Message"])
+    return df
+
 def on_ui_tabs():
     """Register UI components"""
     try:
@@ -146,13 +154,16 @@ def on_ui_tabs():
             with gr.Row():
                 # Left column for the list
                 with gr.Column(scale=2):
+                    # Initialize with DataFrame
+                    initial_df = pd.DataFrame([[p.timestamp, p.name, p.message] for p in photos], 
+                                           columns=["Time", "Name", "Message"])
                     photo_list = gr.Dataframe(
                         headers=["Time", "Name", "Message"],
                         row_count=10,
                         col_count=(3, "fixed"),
                         interactive=True,
                         elem_id="photo_list",
-                        value=[[p.timestamp, p.name, p.message] for p in photos]  # Initialize with current photos
+                        value=initial_df
                     )
                     refresh_btn = gr.Button("🔄", size="sm")
                 
@@ -170,34 +181,37 @@ def on_ui_tabs():
                         send_to_txt2img = gr.Button("Use as ControlNet input", variant="primary")
                     status_text = gr.Textbox(label="Status", interactive=False, value="No image selected")
             
-            def update_photo_list():
-                photo_data = [[p.timestamp, p.name, p.message] for p in photos]
-                print(f"[Photo Message] Updating photo list with {len(photo_data)} photos")
-                return photo_data
-            
             def on_select(evt: gr.SelectData, current_value):
                 try:
                     print(f"[Photo Message] Selection event: {evt.index}")
                     print(f"[Photo Message] Current dataframe value: {current_value}")
                     
-                    if not current_value or len(current_value) <= evt.index[0]:
-                        print("[Photo Message] No valid selection in dataframe")
+                    # Handle DataFrame properly
+                    if current_value.empty:
+                        print("[Photo Message] DataFrame is empty")
                         return None
                         
-                    timestamp = current_value[evt.index[0]][0]
-                    print(f"[Photo Message] Selected timestamp: {timestamp}")
+                    # Get the selected row using iloc
+                    try:
+                        selected_row = current_value.iloc[evt.index[0]]
+                        timestamp = selected_row[0]  # First column is timestamp
+                        print(f"[Photo Message] Selected timestamp: {timestamp}")
+                        
+                        # Debug the photos list
+                        print(f"[Photo Message] Current photos in memory: {len(photos)}")
+                        for p in photos:
+                            print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
+                        
+                        image = get_photo_by_timestamp(timestamp)
+                        if image is not None:
+                            print("[Photo Message] Successfully loaded image")
+                            return image
+                        else:
+                            print("[Photo Message] Failed to load image")
+                    except IndexError:
+                        print("[Photo Message] Selected index out of range")
+                        return None
                     
-                    # Debug the photos list
-                    print(f"[Photo Message] Current photos in memory: {len(photos)}")
-                    for p in photos:
-                        print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
-                    
-                    image = get_photo_by_timestamp(timestamp)
-                    if image is not None:
-                        print("[Photo Message] Successfully loaded image")
-                        return image
-                    else:
-                        print("[Photo Message] Failed to load image")
                 except Exception as e:
                     print(f"[Photo Message] Error selecting photo: {e}")
                     print(traceback.format_exc())
