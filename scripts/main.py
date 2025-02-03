@@ -35,12 +35,19 @@ def on_app_started(demo: FastAPI):
         print(f"  - {route.path} [{route.methods}]")
     
     try:
-        # Add a test endpoint first
+        # Add a simple test route first
+        @demo.get("/test", response_model=dict)
+        async def simple_test():
+            return {"status": "ok", "message": "Simple test endpoint works!"}
+            
+        print("\n[Photo Message] Simple test endpoint registered")
+        
+        # Add our main test endpoint
         @demo.get("/sdapi/v1/photo_message/test", response_model=dict)
         async def test_endpoint():
             return {"status": "success", "message": "Photo Message extension is working!"}
             
-        print("\n[Photo Message] Test endpoint registered")
+        print("\n[Photo Message] Main test endpoint registered")
         
         @demo.post("/sdapi/v1/photo_message/receive", response_model=dict, name="photo_message_receive")
         async def receive_photo(data: PhotoRequest):
