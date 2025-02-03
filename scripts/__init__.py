@@ -30,22 +30,13 @@ class PhotoRequest(BaseModel):
     message: str
     display_app_url: str | None = None
 
-def api_only(demo: FastAPI):
+def api_only(app: FastAPI):
     """Register API endpoints only"""
     print("\n[Photo Message] Registering API endpoints...")
-    print(f"[Photo Message] Available API routes before registration:")
-    for route in demo.routes:
-        print(f"  - {route.path} [{route.methods}]")
+    print(f"[Photo Message] FastAPI app info: {app}")
     
     try:
-        # Try to get the API router from A1111
-        api_router = next((route for route in demo.routes if "/sdapi" in str(route.path)), None)
-        if api_router:
-            print(f"\n[Photo Message] Found A1111 API router: {api_router}")
-        else:
-            print("\n[Photo Message] Warning: Could not find A1111 API router")
-
-        @demo.get("/sdapi/v1/photo_message/ping")
+        @app.get("/sdapi/v1/photo_message/ping")
         async def ping(request: Request):
             print(f"[Photo Message] Ping request received")
             print(f"[Photo Message] Request base URL: {request.base_url}")
@@ -61,7 +52,7 @@ def api_only(demo: FastAPI):
             
         print("[Photo Message] Registered ping endpoint")
         
-        @demo.get("/sdapi/v1/photo_message/test")
+        @app.get("/sdapi/v1/photo_message/test")
         async def test(request: Request):
             print(f"[Photo Message] Test request received from: {request.client}")
             return {
@@ -72,7 +63,7 @@ def api_only(demo: FastAPI):
             
         print("[Photo Message] Registered test endpoint")
         
-        @demo.post("/sdapi/v1/photo_message/receive")
+        @app.post("/sdapi/v1/photo_message/receive")
         async def receive_photo(data: PhotoRequest, request: Request):
             print(f"[Photo Message] Receive endpoint hit from: {request.client}")
             print(f"[Photo Message] Request data: name={data.name}, message={data.message}")
@@ -100,24 +91,28 @@ def api_only(demo: FastAPI):
                 raise HTTPException(status_code=500, detail=error_msg)
                 
         print("[Photo Message] Registered receive endpoint")
-        print("\n[Photo Message] Available routes after registration:")
-        for route in demo.routes:
-            print(f"  - {route.path} [{route.methods}]")
         
     except Exception as e:
         print(f"[Photo Message] Error registering endpoints: {str(e)}")
         print(traceback.format_exc())
 
-def on_app_started(demo: FastAPI, app=None):
+def on_app_started(demo: gr.Blocks, app: FastAPI):
     """Main callback when the app starts"""
     print("\n[Photo Message] App started callback triggered")
-    print(f"[Photo Message] FastAPI app type: {type(demo)}")
-    print(f"[Photo Message] FastAPI app info: {demo}")
-    print(f"[Photo Message] Secondary app info: {app}")
+    print(f"[Photo Message] Gradio Blocks type: {type(demo)}")
+    print(f"[Photo Message] FastAPI app type: {type(app)}")
+    
+    if app is None:
+        print("[Photo Message] Error: FastAPI app is None!")
+        return
+        
+    if not isinstance(app, FastAPI):
+        print(f"[Photo Message] Error: Expected FastAPI app, got {type(app)}")
+        return
     
     try:
-        # Register API endpoints
-        api_only(demo)
+        # Register API endpoints using the FastAPI app
+        api_only(app)
         print("[Photo Message] API registration completed")
     except Exception as e:
         print(f"[Photo Message] Error in app_started: {str(e)}")
