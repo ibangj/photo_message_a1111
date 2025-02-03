@@ -26,14 +26,28 @@ class PhotoRequest(BaseModel):
     display_app_url: str | None = None
 
 def on_app_started(demo: FastAPI):
-    print("[Photo Message] Registering API endpoint...")
+    print("\n[Photo Message] Starting API registration...")
+    print(f"[Photo Message] FastAPI app type: {type(demo)}")
+    
+    # Print all existing routes before adding ours
+    print("\n[Photo Message] Existing API routes:")
+    for route in demo.routes:
+        print(f"  - {route.path} [{route.methods}]")
+    
     try:
-        @demo.post("/sdapi/v1/photo_message/receive")
+        # Add a test endpoint first
+        @demo.get("/sdapi/v1/photo_message/test", response_model=dict)
+        async def test_endpoint():
+            return {"status": "success", "message": "Photo Message extension is working!"}
+            
+        print("\n[Photo Message] Test endpoint registered")
+        
+        @demo.post("/sdapi/v1/photo_message/receive", response_model=dict, name="photo_message_receive")
         async def receive_photo(data: PhotoRequest):
+            print(f"[Photo Message] Endpoint hit: /sdapi/v1/photo_message/receive")
+            print(f"[Photo Message] Request data: name={data.name}, message={data.message}")
+            
             try:
-                print(f"[Photo Message] Received request from {data.name}")
-                print(f"[Photo Message] Message: {data.message}")
-                
                 # Create new photo message
                 photo = PhotoMessage(
                     image_data=data.image,
@@ -46,25 +60,39 @@ def on_app_started(demo: FastAPI):
                 photos.append(photo)
                 print(f"[Photo Message] Added photo to queue. Total photos: {len(photos)}")
                 
-                return {
+                response = {
                     "status": "success", 
                     "message": f"Photo received from {data.name}",
                     "timestamp": photo.timestamp
                 }
-            except Exception as e:
-                print(f"[Photo Message] Error processing request: {str(e)}")
-                print(traceback.format_exc())
-                raise HTTPException(status_code=500, detail=str(e))
+                print(f"[Photo Message] Sending response: {response}")
+                return response
                 
-        print("[Photo Message] API endpoint registered successfully")
-        print(f"[Photo Message] Available routes: {[route.path for route in demo.routes]}")
+            except Exception as e:
+                error_msg = f"Error processing request: {str(e)}"
+                print(f"[Photo Message] {error_msg}")
+                print(traceback.format_exc())
+                raise HTTPException(status_code=500, detail=error_msg)
+                
+        print("\n[Photo Message] API endpoint registered successfully")
+        print("[Photo Message] Updated routes:")
+        for route in demo.routes:
+            print(f"  - {route.path} [{route.methods}]")
+        
+        # Verify our endpoint is in the routes
+        our_endpoint = "/sdapi/v1/photo_message/receive"
+        if any(our_endpoint == route.path for route in demo.routes):
+            print(f"\n[Photo Message] ✅ Endpoint {our_endpoint} successfully registered!")
+        else:
+            print(f"\n[Photo Message] ❌ Warning: Endpoint {our_endpoint} not found in routes!")
         
     except Exception as e:
         print(f"[Photo Message] Error registering API endpoint: {str(e)}")
         print(traceback.format_exc())
 
-# Register the API endpoint
+# Register the API endpoint first
 script_callbacks.on_app_started(on_app_started)
+print("[Photo Message] API registration complete")
 
 def on_ui_tabs():
     try:
