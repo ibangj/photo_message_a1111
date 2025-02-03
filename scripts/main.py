@@ -5,6 +5,8 @@ import json
 import base64
 from modules import script_callbacks, shared
 from modules.processing import process_images, StableDiffusionProcessingImg2Img, StableDiffusionProcessingTxt2Img
+from fastapi import FastAPI, Body
+from modules.api.models import *
 
 # Store received photos and their status
 photos = []
@@ -188,4 +190,20 @@ def on_ui_tabs():
 
     return [(photo_message_tab, "Photo Message", "photo_message_tab")]
 
-script_callbacks.on_ui_tabs(on_ui_tabs) 
+script_callbacks.on_ui_tabs(on_ui_tabs)
+
+def on_app_started(demo: None, app: FastAPI):
+    @app.post("/sdapi/v1/photo_message/receive")
+    async def receive_photo(
+        image: str = Body(...),
+        name: str = Body(...),
+        message: str = Body(...),
+        display_app_url: str = Body(...)
+    ):
+        try:
+            # Your photo processing logic here
+            return {"status": "success"}
+        except Exception as e:
+            return {"status": "error", "detail": str(e)}
+
+script_callbacks.on_app_started(on_app_started) 
