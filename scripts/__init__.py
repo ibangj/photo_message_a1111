@@ -232,28 +232,26 @@ def on_ui_tabs():
                     try:
                         print("[Photo Message] Attempting to send image to img2img...")
                         
-                        # Convert PIL Image to base64
-                        buffered = io.BytesIO()
-                        image.save(buffered, format="PNG")
-                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        # Import A1111's image handling modules
+                        from modules import images, shared
                         
-                        # Use the API endpoint to set the image
+                        # Convert PIL Image to the format A1111 expects
                         try:
-                            url = "http://127.0.0.1:3001sdapi/v1/img2img"
-                            payload = {
-                                "init_images": [img_str],
-                                "include_init_images": True,
-                                "resize_mode": 0
-                            }
-                            response = requests.post(url, json=payload)
-                            if response.status_code == 200:
-                                print("[Photo Message] Successfully sent image to img2img API")
-                                return "Image sent to img2img tab. Please switch to img2img tab."
-                            else:
-                                print(f"[Photo Message] API error: {response.status_code}")
-                                print(f"[Photo Message] Response: {response.text}")
+                            # Convert to numpy array first
+                            img_array = np.array(image)
+                            
+                            # Save to shared state the way A1111 does it
+                            shared.state.assign_current_image(img_array)
+                            shared.state.current_image = img_array
+                            
+                            # Also try to set it directly in the img2img tab
+                            shared.state.img2img_image = img_array
+                            shared.state.img2img_batch = shared.state.img2img_image
+                            
+                            print("[Photo Message] Successfully set image in shared state")
+                            return "Image sent to img2img tab. Please switch to img2img tab."
                         except Exception as e:
-                            print(f"[Photo Message] Error calling API: {e}")
+                            print(f"[Photo Message] Error setting image in shared state: {e}")
                             print(traceback.format_exc())
                         
                         return "Could not send image to img2img. Please try copying and pasting manually."
@@ -268,35 +266,51 @@ def on_ui_tabs():
                     try:
                         print("[Photo Message] Attempting to send image to ControlNet...")
                         
-                        # Convert PIL Image to base64
-                        buffered = io.BytesIO()
-                        image.save(buffered, format="PNG")
-                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        # Import A1111's modules
+                        from modules import shared, scripts
                         
-                        # Use the ControlNet API endpoint
-                        try:
-                            url = "http://127.0.0.1:3001/controlnet/img2img"
-                            payload = {
-                                "controlnet_input_images": [img_str],
-                                "controlnet_module": "none",  # Default module
-                                "controlnet_processor_res": 512,
-                                "controlnet_threshold_a": 64,
-                                "controlnet_threshold_b": 64,
-                                "controlnet_guidance": 1.0,
-                                "controlnet_model": "None"
-                            }
-                            response = requests.post(url, json=payload)
-                            if response.status_code == 200:
-                                print("[Photo Message] Successfully sent image to ControlNet API")
-                                return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
-                            else:
-                                print(f"[Photo Message] API error: {response.status_code}")
-                                print(f"[Photo Message] Response: {response.text}")
-                        except Exception as e:
-                            print(f"[Photo Message] Error calling API: {e}")
-                            print(traceback.format_exc())
+                        # Convert PIL Image to numpy array
+                        img_array = np.array(image)
                         
-                        return "Could not find ControlNet. Please make sure ControlNet extension is installed and enabled."
+                        # Find the ControlNet script
+                        found = False
+                        for script in scripts.scripts_txt2img.alwayson_scripts:
+                            try:
+                                if hasattr(script, 'title') and callable(script.title):
+                                    title = script.title().lower()
+                                    if "controlnet" in title:
+                                        print(f"[Photo Message] Found ControlNet script: {title}")
+                                        
+                                        # Get the script's module
+                                        if hasattr(script, 'module'):
+                                            module = script.module
+                                            print(f"[Photo Message] Found ControlNet module")
+                                            
+                                            # Set the image using the module's methods
+                                            if hasattr(module, 'set_input_image'):
+                                                module.set_input_image(img_array)
+                                                found = True
+                                                print("[Photo Message] Set image using module's set_input_image")
+                                            elif hasattr(module, 'input_image'):
+                                                module.input_image = img_array
+                                                found = True
+                                                print("[Photo Message] Set image using module's input_image")
+                                            
+                                            # Try to enable the module
+                                            if hasattr(module, 'enabled'):
+                                                module.enabled = True
+                                                print("[Photo Message] Enabled ControlNet module")
+                                            
+                                            break
+                            except Exception as e:
+                                print(f"[Photo Message] Error with script {script}: {e}")
+                                continue
+                        
+                        if found:
+                            return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
+                        else:
+                            return "Could not find ControlNet. Please make sure ControlNet extension is installed and enabled."
+                            
                     except Exception as e:
                         print(f"[Photo Message] Error sending to ControlNet: {e}")
                         print(traceback.format_exc())
