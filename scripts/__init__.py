@@ -5,13 +5,14 @@ import json
 import base64
 import traceback
 from datetime import datetime
-from modules import script_callbacks, shared, api
+from modules import script_callbacks, shared, api, scripts, img2img
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import io
 from PIL import Image
 import pandas as pd
+import numpy as np
 
 print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
@@ -228,13 +229,22 @@ def on_ui_tabs():
             def send_to_img2img_tab(image):
                 if image is not None:
                     try:
-                        # Convert PIL Image to bytes
-                        img_byte_arr = io.BytesIO()
-                        image.save(img_byte_arr, format='PNG')
-                        img_bytes = img_byte_arr.getvalue()
+                        # Convert PIL Image to numpy array
+                        img_array = np.array(image)
                         
                         # Set the image in img2img tab
-                        shared.state.img2img_image = img_bytes
+                        shared.state.img2img = {
+                            'image': img_array,
+                            'mode': 0
+                        }
+                        
+                        # Also try setting it directly in the tab
+                        try:
+                            shared.state.img2img_image = image
+                            shared.state.img2img_batch = shared.state.img2img_image.copy()
+                        except:
+                            pass
+                            
                         return "Image sent to img2img tab. Please switch to img2img tab."
                     except Exception as e:
                         print(f"[Photo Message] Error sending to img2img: {e}")
@@ -245,14 +255,27 @@ def on_ui_tabs():
             def send_to_txt2img_tab(image):
                 if image is not None:
                     try:
-                        # Convert PIL Image to bytes
-                        img_byte_arr = io.BytesIO()
-                        image.save(img_byte_arr, format='PNG')
-                        img_bytes = img_byte_arr.getvalue()
+                        # Convert PIL Image to numpy array
+                        img_array = np.array(image)
                         
-                        # TODO: Implement ControlNet integration
-                        # This would need to be implemented based on how ControlNet accepts images
-                        return "Image sent to ControlNet. Please switch to txt2img tab and enable ControlNet."
+                        # Try to find ControlNet in the extensions
+                        try:
+                            found = False
+                            for script in scripts.scripts_txt2img.alwayson_scripts:
+                                if "controlnet" in script.title().lower():
+                                    # Set the image in ControlNet's UI
+                                    script.image = img_array
+                                    found = True
+                                    break
+                            
+                            if not found:
+                                return "ControlNet extension not found. Please install ControlNet first."
+                                
+                        except Exception as e:
+                            print(f"[Photo Message] Error finding ControlNet: {e}")
+                            return "Error accessing ControlNet. Make sure it's installed."
+                        
+                        return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
                     except Exception as e:
                         print(f"[Photo Message] Error sending to ControlNet: {e}")
                         print(traceback.format_exc())
