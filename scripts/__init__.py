@@ -9,6 +9,7 @@ from modules import script_callbacks, shared, api
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import io
 
 print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
@@ -19,7 +20,7 @@ photos = []
 
 class PhotoMessage:
     def __init__(self, image_data, name, message, timestamp):
-        self.image_data = image_data
+        self.image_data = image_data  # Base64 encoded image data
         self.name = name
         self.message = message
         self.timestamp = timestamp
@@ -127,18 +128,89 @@ def on_ui_tabs():
             gr.Markdown("Received photos will appear here.")
             
             with gr.Row():
-                photo_list = gr.Dataframe(
-                    headers=["Time", "Name", "Message"],
-                    row_count=10,
-                    col_count=(3, "fixed"),
-                    interactive=False
-                )
-                refresh_btn = gr.Button("🔄 Refresh")
+                # Left column for the list
+                with gr.Column(scale=2):
+                    photo_list = gr.Dataframe(
+                        headers=["Time", "Name", "Message"],
+                        row_count=10,
+                        col_count=(3, "fixed"),
+                        interactive=True,
+                        elem_id="photo_list"
+                    )
+                    refresh_btn = gr.Button("🔄", size="sm")
+                
+                # Right column for image preview and actions
+                with gr.Column(scale=3):
+                    preview_image = gr.Image(
+                        label="Selected Photo",
+                        show_label=True,
+                        interactive=False,
+                        height=400
+                    )
+                    with gr.Row():
+                        send_to_img2img = gr.Button("Send to img2img", variant="primary")
+                        send_to_txt2img = gr.Button("Use as ControlNet input", variant="primary")
+                    status_text = gr.Textbox(label="Status", interactive=False)
             
             def update_photo_list():
                 return [[p.timestamp, p.name, p.message] for p in photos]
             
+            def get_photo_by_timestamp(timestamp):
+                for photo in photos:
+                    if photo.timestamp == timestamp:
+                        try:
+                            # Convert base64 to image data
+                            image_bytes = base64.b64decode(photo.image_data)
+                            return image_bytes
+                        except Exception as e:
+                            print(f"Error decoding image: {e}")
+                            return None
+                return None
+            
+            def send_to_img2img_tab(image):
+                if image is not None:
+                    try:
+                        # Convert PIL Image to bytes if needed
+                        if hasattr(image, 'convert'):
+                            img_byte_arr = io.BytesIO()
+                            image.convert('RGB').save(img_byte_arr, format='PNG')
+                            image = img_byte_arr.getvalue()
+                        
+                        # Set the image in img2img tab
+                        shared.state.img2img_image = image
+                        return "Image sent to img2img tab. Please switch to img2img tab."
+                    except Exception as e:
+                        print(f"Error sending to img2img: {e}")
+                        return f"Error: {str(e)}"
+                return "No image selected"
+            
+            def send_to_txt2img_tab(image):
+                if image is not None:
+                    try:
+                        # This would need to be implemented based on how ControlNet accepts images
+                        return "Image sent to ControlNet. Please switch to txt2img tab and enable ControlNet."
+                    except Exception as e:
+                        print(f"Error sending to ControlNet: {e}")
+                        return f"Error: {str(e)}"
+                return "No image selected"
+            
+            def on_select(evt: gr.SelectData):
+                try:
+                    timestamp = photo_list.value[evt.index[0]][0]
+                    image_data = get_photo_by_timestamp(timestamp)
+                    if image_data is not None:
+                        return image_data
+                except Exception as e:
+                    print(f"Error selecting photo: {e}")
+                return None
+            
+            # Wire up the events
             refresh_btn.click(update_photo_list, outputs=[photo_list])
+            photo_list.select(on_select, outputs=[preview_image])
+            send_to_img2img.click(send_to_img2img_tab, inputs=[preview_image], outputs=[status_text])
+            send_to_txt2img.click(send_to_txt2img_tab, inputs=[preview_image], outputs=[status_text])
+            
+            # Initialize the list
             photo_list.value = update_photo_list()
             
         print("[Photo Message] UI tab created successfully")
