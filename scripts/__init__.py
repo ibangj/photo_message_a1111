@@ -13,6 +13,7 @@ import io
 from PIL import Image
 import pandas as pd
 import numpy as np
+import requests
 
 print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
@@ -231,27 +232,29 @@ def on_ui_tabs():
                     try:
                         print("[Photo Message] Attempting to send image to img2img...")
                         
-                        # Convert PIL Image to numpy array
-                        img_array = np.array(image)
+                        # Convert PIL Image to base64
+                        buffered = io.BytesIO()
+                        image.save(buffered, format="PNG")
+                        img_str = base64.b64encode(buffered.getvalue()).decode()
                         
-                        # Try to set the image using the img2img module directly
+                        # Use the API endpoint to set the image
                         try:
-                            import modules.img2img as img2img_module
-                            if hasattr(img2img_module, 'init_img'):
-                                print("[Photo Message] Setting image via img2img module...")
-                                img2img_module.init_img = img_array
+                            url = "http://127.0.0.1:3001sdapi/v1/img2img"
+                            payload = {
+                                "init_images": [img_str],
+                                "include_init_images": True,
+                                "resize_mode": 0
+                            }
+                            response = requests.post(url, json=payload)
+                            if response.status_code == 200:
+                                print("[Photo Message] Successfully sent image to img2img API")
                                 return "Image sent to img2img tab. Please switch to img2img tab."
+                            else:
+                                print(f"[Photo Message] API error: {response.status_code}")
+                                print(f"[Photo Message] Response: {response.text}")
                         except Exception as e:
-                            print(f"[Photo Message] Error setting via img2img module: {e}")
-                        
-                        # Fallback: Try to set via shared state
-                        try:
-                            if hasattr(shared.state, 'img2img_image'):
-                                print("[Photo Message] Setting image via shared state...")
-                                shared.state.img2img_image = img_array
-                                return "Image sent to img2img tab. Please switch to img2img tab."
-                        except Exception as e:
-                            print(f"[Photo Message] Error setting via shared state: {e}")
+                            print(f"[Photo Message] Error calling API: {e}")
+                            print(traceback.format_exc())
                         
                         return "Could not send image to img2img. Please try copying and pasting manually."
                     except Exception as e:
@@ -265,48 +268,35 @@ def on_ui_tabs():
                     try:
                         print("[Photo Message] Attempting to send image to ControlNet...")
                         
-                        # Convert PIL Image to numpy array
-                        img_array = np.array(image)
+                        # Convert PIL Image to base64
+                        buffered = io.BytesIO()
+                        image.save(buffered, format="PNG")
+                        img_str = base64.b64encode(buffered.getvalue()).decode()
                         
-                        # Try to find ControlNet in the scripts
-                        found = False
-                        
-                        # Method 1: Try through scripts collection
+                        # Use the ControlNet API endpoint
                         try:
-                            print("[Photo Message] Searching for ControlNet in scripts...")
-                            for script in scripts.scripts_txt2img.alwayson_scripts:
-                                if hasattr(script, 'title') and callable(script.title):
-                                    script_title = script.title().lower()
-                                    print(f"[Photo Message] Found script: {script_title}")
-                                    if "controlnet" in script_title:
-                                        print("[Photo Message] Found ControlNet script")
-                                        if hasattr(script, 'set_input_image'):
-                                            script.set_input_image(img_array)
-                                            found = True
-                                            print("[Photo Message] Set image using set_input_image")
-                                            break
+                            url = "http://127.0.0.1:3001/controlnet/img2img"
+                            payload = {
+                                "controlnet_input_images": [img_str],
+                                "controlnet_module": "none",  # Default module
+                                "controlnet_processor_res": 512,
+                                "controlnet_threshold_a": 64,
+                                "controlnet_threshold_b": 64,
+                                "controlnet_guidance": 1.0,
+                                "controlnet_model": "None"
+                            }
+                            response = requests.post(url, json=payload)
+                            if response.status_code == 200:
+                                print("[Photo Message] Successfully sent image to ControlNet API")
+                                return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
+                            else:
+                                print(f"[Photo Message] API error: {response.status_code}")
+                                print(f"[Photo Message] Response: {response.text}")
                         except Exception as e:
-                            print(f"[Photo Message] Error searching scripts: {e}")
+                            print(f"[Photo Message] Error calling API: {e}")
                             print(traceback.format_exc())
                         
-                        # Method 2: Try through extension modules
-                        if not found:
-                            try:
-                                print("[Photo Message] Trying to import ControlNet module...")
-                                import importlib
-                                controlnet = importlib.import_module('extensions.sd-webui-controlnet.scripts.controlnet')
-                                if hasattr(controlnet, 'update_input_image'):
-                                    controlnet.update_input_image(img_array)
-                                    found = True
-                                    print("[Photo Message] Set image through ControlNet module")
-                            except Exception as e:
-                                print(f"[Photo Message] Error importing ControlNet module: {e}")
-                        
-                        if found:
-                            return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
-                        else:
-                            return "Could not find ControlNet. Please make sure ControlNet extension is installed and enabled."
-                            
+                        return "Could not find ControlNet. Please make sure ControlNet extension is installed and enabled."
                     except Exception as e:
                         print(f"[Photo Message] Error sending to ControlNet: {e}")
                         print(traceback.format_exc())
