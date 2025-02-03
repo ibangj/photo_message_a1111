@@ -3,9 +3,13 @@ import asyncio
 import aiohttp
 import json
 import base64
+import traceback
+from PIL import Image
+import io
+from datetime import datetime
 from modules import script_callbacks, shared
 from modules.processing import process_images, StableDiffusionProcessingImg2Img, StableDiffusionProcessingTxt2Img
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, HTTPException
 from modules.api.models import *
 
 # Store received photos and their status
@@ -115,7 +119,7 @@ def on_ui_tabs():
             with gr.Column():
                 gr.HTML("<h2>📸 Received Photos</h2>")
                 photo_list = gr.Dataframe(
-                    headers=["Timestamp", "Name", "Message", "Status"],
+                    headers=["Time", "Name", "Message", "Status"],
                     row_count=10,
                     col_count=(4, "fixed"),
                     interactive=False
