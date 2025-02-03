@@ -229,22 +229,22 @@ def on_ui_tabs():
             def send_to_img2img_tab(image):
                 if image is not None:
                     try:
+                        print("[Photo Message] Attempting to send image to img2img...")
+                        
                         # Convert PIL Image to numpy array
                         img_array = np.array(image)
                         
-                        # Set the image in img2img tab
-                        shared.state.img2img = {
-                            'image': img_array,
-                            'mode': 0
-                        }
+                        # Get the img2img UI components
+                        import modules.ui
+                        for component in shared.gradio['img2img_image'].children:
+                            if isinstance(component, gr.Image):
+                                try:
+                                    print("[Photo Message] Found img2img image component, setting value...")
+                                    component.set_value(img_array)
+                                    break
+                                except Exception as e:
+                                    print(f"[Photo Message] Error setting component value: {e}")
                         
-                        # Also try setting it directly in the tab
-                        try:
-                            shared.state.img2img_image = image
-                            shared.state.img2img_batch = shared.state.img2img_image.copy()
-                        except:
-                            pass
-                            
                         return "Image sent to img2img tab. Please switch to img2img tab."
                     except Exception as e:
                         print(f"[Photo Message] Error sending to img2img: {e}")
@@ -255,26 +255,48 @@ def on_ui_tabs():
             def send_to_txt2img_tab(image):
                 if image is not None:
                     try:
+                        print("[Photo Message] Attempting to send image to ControlNet...")
+                        
                         # Convert PIL Image to numpy array
                         img_array = np.array(image)
                         
-                        # Try to find ControlNet in the extensions
-                        try:
-                            found = False
-                            for script in scripts.scripts_txt2img.alwayson_scripts:
-                                if "controlnet" in script.title().lower():
-                                    # Set the image in ControlNet's UI
-                                    script.image = img_array
-                                    found = True
-                                    break
-                            
-                            if not found:
-                                return "ControlNet extension not found. Please install ControlNet first."
-                                
-                        except Exception as e:
-                            print(f"[Photo Message] Error finding ControlNet: {e}")
-                            return "Error accessing ControlNet. Make sure it's installed."
+                        # Try to find and set ControlNet image
+                        found = False
                         
+                        # First try the newer ControlNet API
+                        try:
+                            import modules.ui
+                            for tab in shared.gradio['txt2img_tabs'].children:
+                                if hasattr(tab, 'elem_id') and 'controlnet' in tab.elem_id.lower():
+                                    for component in tab.children:
+                                        if isinstance(component, gr.Image):
+                                            print("[Photo Message] Found ControlNet image component, setting value...")
+                                            component.set_value(img_array)
+                                            found = True
+                                            break
+                                    if found:
+                                        break
+                        except Exception as e:
+                            print(f"[Photo Message] Error with new ControlNet API: {e}")
+                        
+                        # Fallback to older method
+                        if not found:
+                            try:
+                                for script in scripts.scripts_txt2img.alwayson_scripts:
+                                    if hasattr(script, 'title') and "controlnet" in script.title().lower():
+                                        if hasattr(script, 'ui'):
+                                            for component in script.ui:
+                                                if isinstance(component, gr.Image):
+                                                    print("[Photo Message] Found ControlNet component via script, setting value...")
+                                                    component.set_value(img_array)
+                                                    found = True
+                                                    break
+                            except Exception as e:
+                                print(f"[Photo Message] Error with old ControlNet API: {e}")
+                        
+                        if not found:
+                            return "Could not find ControlNet image input. Make sure ControlNet is installed and enabled."
+                            
                         return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
                     except Exception as e:
                         print(f"[Photo Message] Error sending to ControlNet: {e}")
