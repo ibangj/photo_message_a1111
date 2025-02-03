@@ -45,7 +45,7 @@ def api_only(demo: FastAPI):
         else:
             print("\n[Photo Message] Warning: Could not find A1111 API router")
 
-        @demo.get("/sdapi/v1/internal/photo_message/ping")
+        @demo.get("/sdapi/v1/photo_message/ping")
         async def ping(request: Request):
             print(f"[Photo Message] Ping request received")
             print(f"[Photo Message] Request base URL: {request.base_url}")
@@ -61,7 +61,7 @@ def api_only(demo: FastAPI):
             
         print("[Photo Message] Registered ping endpoint")
         
-        @demo.get("/sdapi/v1/internal/photo_message/test")
+        @demo.get("/sdapi/v1/photo_message/test")
         async def test(request: Request):
             print(f"[Photo Message] Test request received from: {request.client}")
             return {
@@ -72,7 +72,7 @@ def api_only(demo: FastAPI):
             
         print("[Photo Message] Registered test endpoint")
         
-        @demo.post("/sdapi/v1/internal/photo_message/receive")
+        @demo.post("/sdapi/v1/photo_message/receive")
         async def receive_photo(data: PhotoRequest, request: Request):
             print(f"[Photo Message] Receive endpoint hit from: {request.client}")
             print(f"[Photo Message] Request data: name={data.name}, message={data.message}")
@@ -108,11 +108,12 @@ def api_only(demo: FastAPI):
         print(f"[Photo Message] Error registering endpoints: {str(e)}")
         print(traceback.format_exc())
 
-def on_app_started(demo: FastAPI):
+def on_app_started(demo: FastAPI, app=None):
     """Main callback when the app starts"""
     print("\n[Photo Message] App started callback triggered")
     print(f"[Photo Message] FastAPI app type: {type(demo)}")
     print(f"[Photo Message] FastAPI app info: {demo}")
+    print(f"[Photo Message] Secondary app info: {app}")
     
     try:
         # Register API endpoints
