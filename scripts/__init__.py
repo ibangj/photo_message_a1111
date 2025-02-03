@@ -1,1 +1,2 @@
-from . import main 
+print("[Photo Message] Loading scripts...")
+import scripts.main 

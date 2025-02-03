@@ -1,0 +1,1 @@
+print("[Photo Message] Initializing extension...") 
