@@ -14,8 +14,8 @@ from modules.api.models import *
 
 # Store received photos and their status
 photos = []
-display_app_url = "http://localhost:5001"  # Default value
-capture_app_url = "http://localhost:5000"  # Default value
+display_app_url = "http://203.153.109.225:5001"  # Updated to match your config
+capture_app_url = "http://203.153.109.225:5000"  # Updated to match your config
 
 class PhotoMessage:
     def __init__(self, image_data, name, message, timestamp, processed=False, sent_to_display=False):
@@ -202,12 +202,33 @@ def on_app_started(demo: None, app: FastAPI):
         image: str = Body(...),
         name: str = Body(...),
         message: str = Body(...),
-        display_app_url: str = Body(...)
+        display_app_url: str = Body(None)  # Made optional
     ):
         try:
-            # Your photo processing logic here
-            return {"status": "success"}
+            print(f"Received photo from {name} with message: {message}")
+            
+            # Create new photo message
+            photo = PhotoMessage(
+                image_data=image,
+                name=name,
+                message=message,
+                timestamp=datetime.now().isoformat()
+            )
+            
+            # Add to queue
+            photos.append(photo)
+            print(f"Added new photo to queue. Total photos: {len(photos)}")
+            
+            # Update display app URL if provided
+            global display_app_url
+            if display_app_url:
+                display_app_url = display_app_url
+                print(f"Updated display app URL to: {display_app_url}")
+            
+            return {"status": "success", "message": "Photo received successfully"}
         except Exception as e:
-            return {"status": "error", "detail": str(e)}
+            print(f"Error in receive_photo: {str(e)}")
+            print(traceback.format_exc())
+            raise HTTPException(status_code=500, detail=str(e))
 
 script_callbacks.on_app_started(on_app_started) 
