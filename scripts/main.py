@@ -197,12 +197,12 @@ def on_ui_tabs():
 script_callbacks.on_ui_tabs(on_ui_tabs)
 
 def on_app_started(demo: None, app: FastAPI):
-    @app.post("/sdapi/v1/photo_message/receive")
+    @app.post("/sdapi/v1/photo-message/receive")
     async def receive_photo(
         image: str = Body(...),
         name: str = Body(...),
         message: str = Body(...),
-        display_app_url: str = Body(None)  # Made optional
+        display_app_url: str = Body(None)
     ):
         try:
             print(f"Received photo from {name} with message: {message}")
@@ -218,12 +218,6 @@ def on_app_started(demo: None, app: FastAPI):
             # Add to queue
             photos.append(photo)
             print(f"Added new photo to queue. Total photos: {len(photos)}")
-            
-            # Update display app URL if provided
-            global display_app_url
-            if display_app_url:
-                display_app_url = display_app_url
-                print(f"Updated display app URL to: {display_app_url}")
             
             return {"status": "success", "message": "Photo received successfully"}
         except Exception as e:
