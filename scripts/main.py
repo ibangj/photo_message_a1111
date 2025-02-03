@@ -105,12 +105,12 @@ def on_ui_tabs():
                 display_url_input = gr.Textbox(
                     label="Display App URL",
                     value=display_app_url,
-                    placeholder="http://localhost:5001"
+                    placeholder=display_app_url
                 )
                 capture_url_input = gr.Textbox(
                     label="Capture App URL",
                     value=capture_app_url,
-                    placeholder="http://localhost:5000"
+                    placeholder=capture_app_url
                 )
                 save_config_btn = gr.Button("💾 Save Configuration")
                 config_status = gr.Textbox(label="Config Status", interactive=False)
@@ -192,20 +192,21 @@ def on_ui_tabs():
         # Start with empty list
         photo_list.value = update_photo_list()
 
-    return [(photo_message_tab, "Photo Message", "photo_message_tab")]
+    return [(photo_message_tab, "Photo Message", "photo_message")]
 
 script_callbacks.on_ui_tabs(on_ui_tabs)
 
-def on_app_started(demo: None, app: FastAPI):
-    @app.post("/sdapi/v1/photo_message/receive")
+def on_app_started(demo: FastAPI):
+    @demo.post("/sdapi/v1/photo_message/receive")
     async def receive_photo(
         image: str = Body(...),
         name: str = Body(...),
         message: str = Body(...),
-        display_app_url: str = Body(None)  # Made optional
+        display_app_url: str = Body(None)
     ):
         try:
             print(f"Received photo from {name} with message: {message}")
+            print(f"API endpoint accessed at: {demo.url_path_for('receive_photo')}")
             
             # Create new photo message
             photo = PhotoMessage(
