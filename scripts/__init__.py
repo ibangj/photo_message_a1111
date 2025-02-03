@@ -184,17 +184,22 @@ def on_ui_tabs():
             def on_select(evt: gr.SelectData, current_value):
                 try:
                     print(f"[Photo Message] Selection event: {evt.index}")
-                    print(f"[Photo Message] Current dataframe value: {current_value}")
+                    print(f"[Photo Message] Current dataframe value:\n{current_value}")
                     
-                    # Handle DataFrame properly
-                    if current_value.empty:
-                        print("[Photo Message] DataFrame is empty")
+                    # Check if we have any data
+                    if current_value is None or len(current_value.index) == 0:
+                        print("[Photo Message] No data in DataFrame")
                         return None
                         
                     # Get the selected row using iloc
                     try:
-                        selected_row = current_value.iloc[evt.index[0]]
-                        timestamp = selected_row[0]  # First column is timestamp
+                        row_idx = evt.index[0]
+                        if row_idx >= len(current_value.index):
+                            print("[Photo Message] Selected index out of range")
+                            return None
+                            
+                        # Get timestamp from the first column
+                        timestamp = current_value.iloc[row_idx, 0]  # Get first column value
                         print(f"[Photo Message] Selected timestamp: {timestamp}")
                         
                         # Debug the photos list
@@ -202,20 +207,23 @@ def on_ui_tabs():
                         for p in photos:
                             print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
                         
+                        # Get and return the image
                         image = get_photo_by_timestamp(timestamp)
                         if image is not None:
                             print("[Photo Message] Successfully loaded image")
                             return image
                         else:
                             print("[Photo Message] Failed to load image")
-                    except IndexError:
-                        print("[Photo Message] Selected index out of range")
+                            return None
+                            
+                    except IndexError as ie:
+                        print(f"[Photo Message] Index error: {ie}")
                         return None
                     
                 except Exception as e:
                     print(f"[Photo Message] Error selecting photo: {e}")
                     print(traceback.format_exc())
-                return None
+                    return None
             
             def send_to_img2img_tab(image):
                 if image is not None:
