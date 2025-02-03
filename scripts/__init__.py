@@ -5,11 +5,14 @@ import json
 import base64
 import traceback
 from datetime import datetime
-from modules import script_callbacks
-from fastapi import FastAPI, HTTPException
+from modules import script_callbacks, shared, api
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-print("[Photo Message] Loading extension...")
+print("\n[Photo Message] ====== Extension Loading ======")
+print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
+print(f"[Photo Message] Python path: {sys.path}")
 
 # Store received photos
 photos = []
@@ -27,31 +30,51 @@ class PhotoRequest(BaseModel):
     message: str
     display_app_url: str | None = None
 
-def on_app_started(demo: FastAPI):
-    print("\n[Photo Message] Starting API registration...")
-    print(f"[Photo Message] FastAPI app type: {type(demo)}")
+def api_only(demo: FastAPI):
+    """Register API endpoints only"""
+    print("\n[Photo Message] Registering API endpoints...")
+    print(f"[Photo Message] Available API routes before registration:")
+    for route in demo.routes:
+        print(f"  - {route.path} [{route.methods}]")
     
     try:
-        # Add a simple test route first
-        @demo.get("/test", response_model=dict)
-        async def simple_test():
-            print("[Photo Message] Simple test endpoint hit!")
-            return {"status": "ok", "message": "Simple test endpoint works!"}
+        # Try to get the API router from A1111
+        api_router = next((route for route in demo.routes if "/sdapi" in str(route.path)), None)
+        if api_router:
+            print(f"\n[Photo Message] Found A1111 API router: {api_router}")
+        else:
+            print("\n[Photo Message] Warning: Could not find A1111 API router")
+
+        @demo.get("/sdapi/v1/internal/photo_message/ping")
+        async def ping(request: Request):
+            print(f"[Photo Message] Ping request received")
+            print(f"[Photo Message] Request base URL: {request.base_url}")
+            print(f"[Photo Message] Request headers: {request.headers}")
+            print(f"[Photo Message] Request client: {request.client}")
+            return {
+                "status": "ok", 
+                "message": "Photo Message extension is alive!",
+                "base_url": str(request.base_url),
+                "url": str(request.url),
+                "client": str(request.client)
+            }
             
-        print("\n[Photo Message] Simple test endpoint registered")
+        print("[Photo Message] Registered ping endpoint")
         
-        # Add our main test endpoint
-        @demo.get("/sdapi/v1/photo_message/test", response_model=dict)
-        async def test_endpoint():
-            print("[Photo Message] Main test endpoint hit!")
-            return {"status": "success", "message": "Photo Message extension is working!"}
+        @demo.get("/sdapi/v1/internal/photo_message/test")
+        async def test(request: Request):
+            print(f"[Photo Message] Test request received from: {request.client}")
+            return {
+                "status": "success", 
+                "message": "Photo Message extension is working!",
+                "client": str(request.client)
+            }
             
-        print("\n[Photo Message] Main test endpoint registered")
+        print("[Photo Message] Registered test endpoint")
         
-        # Add the photo receive endpoint
-        @demo.post("/sdapi/v1/photo_message/receive", response_model=dict)
-        async def receive_photo(data: PhotoRequest):
-            print(f"[Photo Message] Receive endpoint hit!")
+        @demo.post("/sdapi/v1/internal/photo_message/receive")
+        async def receive_photo(data: PhotoRequest, request: Request):
+            print(f"[Photo Message] Receive endpoint hit from: {request.client}")
             print(f"[Photo Message] Request data: name={data.name}, message={data.message}")
             
             try:
@@ -67,7 +90,8 @@ def on_app_started(demo: FastAPI):
                 return {
                     "status": "success", 
                     "message": f"Photo received from {data.name}",
-                    "timestamp": photo.timestamp
+                    "timestamp": photo.timestamp,
+                    "client": str(request.client)
                 }
             except Exception as e:
                 error_msg = f"Error processing request: {str(e)}"
@@ -75,8 +99,8 @@ def on_app_started(demo: FastAPI):
                 print(traceback.format_exc())
                 raise HTTPException(status_code=500, detail=error_msg)
                 
-        print("\n[Photo Message] All endpoints registered successfully")
-        print("\n[Photo Message] Available routes:")
+        print("[Photo Message] Registered receive endpoint")
+        print("\n[Photo Message] Available routes after registration:")
         for route in demo.routes:
             print(f"  - {route.path} [{route.methods}]")
         
@@ -84,9 +108,24 @@ def on_app_started(demo: FastAPI):
         print(f"[Photo Message] Error registering endpoints: {str(e)}")
         print(traceback.format_exc())
 
-def on_ui_tabs():
+def on_app_started(demo: FastAPI):
+    """Main callback when the app starts"""
+    print("\n[Photo Message] App started callback triggered")
+    print(f"[Photo Message] FastAPI app type: {type(demo)}")
+    print(f"[Photo Message] FastAPI app info: {demo}")
+    
     try:
-        print("[Photo Message] Creating UI tab...")
+        # Register API endpoints
+        api_only(demo)
+        print("[Photo Message] API registration completed")
+    except Exception as e:
+        print(f"[Photo Message] Error in app_started: {str(e)}")
+        print(traceback.format_exc())
+
+def on_ui_tabs():
+    """Register UI components"""
+    try:
+        print("\n[Photo Message] Creating UI tab...")
         with gr.Blocks(analytics_enabled=False) as photo_message_tab:
             gr.Markdown("# Photo Message Extension")
             gr.Markdown("Received photos will appear here.")
@@ -112,6 +151,8 @@ def on_ui_tabs():
         print(f"[Photo Message] Error creating UI tab: {str(e)}")
         print(traceback.format_exc())
         return []
+
+print("\n[Photo Message] Registering callbacks...")
 
 # Register callbacks
 script_callbacks.on_app_started(on_app_started)
