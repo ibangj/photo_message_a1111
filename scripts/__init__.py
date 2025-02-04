@@ -475,31 +475,59 @@ def on_ui_tabs():
                         print("[Photo Message] Sending image to API...")
                         # Convert PIL Image to base64
                         buffered = io.BytesIO()
-                        image.save(buffered, format="PNG")
+                        image.save(buffered, format="JPEG", quality=95)
                         img_str = base64.b64encode(buffered.getvalue()).decode()
                         
-                        # Prepare the payload
+                        # Add data:image/jpeg;base64 prefix as expected by display app
+                        img_data = f"data:image/jpeg;base64,{img_str}"
+                        
+                        # Prepare the payload matching display app expectations
                         payload = {
-                            "image": img_str,
-                            "timestamp": datetime.now().isoformat(),
-                            "source": "stable-diffusion-webui"
+                            "image_data": img_data,
+                            "name": "Stable Diffusion",
+                            "message": "Generated with A1111",
+                            "timestamp": datetime.now().isoformat()
                         }
                         
-                        # Send to API
-                        response = requests.post(
-                            "http://localhost:5001/receive_image",
-                            json=payload,
-                            headers={"Content-Type": "application/json"}
-                        )
-                        
-                        if response.status_code == 200:
-                            return "Image sent successfully"
-                        else:
-                            return f"Error sending image: {response.status_code} - {response.text}"
+                        try:
+                            # First try WebSocket if available
+                            if hasattr(sio, 'connected') and sio.connected:
+                                print("[Photo Message] Sending via WebSocket...")
+                                sio.emit('new_photo', json.dumps(payload))
+                                return "Image sent successfully via WebSocket"
+                                
+                            # Fallback to HTTP endpoint
+                            print("[Photo Message] Sending via HTTP...")
+                            response = requests.post(
+                                "http://localhost:5001/new_photo",
+                                json=payload,
+                                headers={"Content-Type": "application/json"},
+                                timeout=10
+                            )
+                            
+                            if response.status_code == 200:
+                                return "Image sent successfully via HTTP"
+                            else:
+                                error_msg = f"Error sending image: {response.status_code} - {response.text}"
+                                print(f"[Photo Message] {error_msg}")
+                                return error_msg
+                                
+                        except requests.exceptions.ConnectionError:
+                            error_msg = "Could not connect to display app - make sure it's running"
+                            print(f"[Photo Message] {error_msg}")
+                            return error_msg
+                        except Exception as e:
+                            error_msg = f"Error sending to display app: {str(e)}"
+                            print(f"[Photo Message] {error_msg}")
+                            print(traceback.format_exc())
+                            return error_msg
+                            
                     except Exception as e:
-                        print(f"[Photo Message] Error sending to API: {e}")
+                        error_msg = f"Error preparing image: {str(e)}"
+                        print(f"[Photo Message] {error_msg}")
                         print(traceback.format_exc())
-                        return f"Error: {str(e)}"
+                        return error_msg
+                        
                 return "No image selected"
             
             def on_gallery_select(evt: gr.SelectData, images):
