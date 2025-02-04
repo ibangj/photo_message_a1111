@@ -19,6 +19,175 @@ print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
 print(f"[Photo Message] Python path: {sys.path}")
 
+# JavaScript code for handling tab switching and image sending
+js_code = """
+function gradioApp() {
+    const elems = document.getElementsByTagName('gradio-app');
+    const elem = elems.length == 0 ? document : elems[0];
+    
+    if (elem !== document) {
+        elem.getElementById = function(id) {
+            return document.getElementById(id);
+        };
+    }
+    return elem.shadowRoot ? elem.shadowRoot : elem;
+}
+
+function switch_to_img2img() {
+    console.log("[Photo Message] Switching to img2img tab...");
+    const tabs = gradioApp().querySelector('#tabs');
+    if (!tabs) {
+        console.error("[Photo Message] Could not find tabs element");
+        return;
+    }
+    
+    // Use A1111's built-in switch_to_img2img function if available
+    if (typeof window.switch_to_img2img === 'function') {
+        console.log("[Photo Message] Using A1111's switch_to_img2img function");
+        window.switch_to_img2img();
+    } else {
+        console.log("[Photo Message] Using fallback tab switching");
+        tabs.querySelectorAll('button')[1].click();
+    }
+    
+    // Wait a bit for the tab to switch before setting the image
+    setTimeout(() => {
+        console.log("[Photo Message] Setting image in img2img...");
+        const img2imgImage = gradioApp().querySelector('#img2img_image');
+        const previewImage = gradioApp().querySelector('#photo_message_image img');
+        
+        if (!img2imgImage) {
+            console.error("[Photo Message] Could not find img2img_image element");
+            return;
+        }
+        if (!previewImage) {
+            console.error("[Photo Message] Could not find preview image");
+            return;
+        }
+        
+        try {
+            let imgData = previewImage.src;
+            console.log("[Photo Message] Got image data:", imgData.substring(0, 100) + "...");
+            
+            // If it's not already a data URL, convert it
+            if (!imgData.startsWith('data:')) {
+                console.log("[Photo Message] Converting to data URL");
+                imgData = 'data:image/jpeg;base64,' + imgData;
+            }
+            
+            // Create a file input event
+            const uploadButton = img2imgImage.querySelector('input[type="file"]');
+            if (uploadButton) {
+                console.log("[Photo Message] Found upload button, creating file...");
+                
+                // Create a blob from the base64 data
+                const byteString = atob(imgData.split(',')[1]);
+                const mimeString = imgData.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                const blob = new Blob([ab], {type: mimeString});
+                const file = new File([blob], "image.jpg", {type: mimeString});
+                
+                // Create a DataTransfer and dispatch the event
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                uploadButton.files = dt.files;
+                
+                // Dispatch both change and input events
+                uploadButton.dispatchEvent(new Event('change', { bubbles: true }));
+                uploadButton.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                console.log("[Photo Message] Image set successfully");
+            } else {
+                console.error("[Photo Message] Could not find upload button");
+            }
+        } catch (error) {
+            console.error("[Photo Message] Error setting image:", error);
+        }
+    }, 100);
+}
+
+function switch_to_extras() {
+    console.log("[Photo Message] Switching to extras tab...");
+    const tabs = gradioApp().querySelector('#tabs');
+    if (!tabs) {
+        console.error("[Photo Message] Could not find tabs element");
+        return;
+    }
+    
+    // Use A1111's built-in switch_to_extras function if available
+    if (typeof window.switch_to_extras === 'function') {
+        console.log("[Photo Message] Using A1111's switch_to_extras function");
+        window.switch_to_extras();
+    } else {
+        console.log("[Photo Message] Using fallback tab switching");
+        tabs.querySelectorAll('button')[2].click();
+    }
+    
+    // Wait a bit for the tab to switch before setting the image
+    setTimeout(() => {
+        console.log("[Photo Message] Setting image in extras...");
+        const extrasImage = gradioApp().querySelector('#extras_image');
+        const previewImage = gradioApp().querySelector('#photo_message_image img');
+        
+        if (!extrasImage) {
+            console.error("[Photo Message] Could not find extras_image element");
+            return;
+        }
+        if (!previewImage) {
+            console.error("[Photo Message] Could not find preview image");
+            return;
+        }
+        
+        try {
+            let imgData = previewImage.src;
+            console.log("[Photo Message] Got image data:", imgData.substring(0, 100) + "...");
+            
+            // If it's not already a data URL, convert it
+            if (!imgData.startsWith('data:')) {
+                console.log("[Photo Message] Converting to data URL");
+                imgData = 'data:image/jpeg;base64,' + imgData;
+            }
+            
+            // Create a file input event
+            const uploadButton = extrasImage.querySelector('input[type="file"]');
+            if (uploadButton) {
+                console.log("[Photo Message] Found upload button, creating file...");
+                
+                // Create a blob from the base64 data
+                const byteString = atob(imgData.split(',')[1]);
+                const mimeString = imgData.split(',')[0].split(':')[1].split(';')[0];
+                const ab = new ArrayBuffer(byteString.length);
+                const ia = new Uint8Array(ab);
+                for (let i = 0; i < byteString.length; i++) {
+                    ia[i] = byteString.charCodeAt(i);
+                }
+                const blob = new Blob([ab], {type: mimeString});
+                const file = new File([blob], "image.jpg", {type: mimeString});
+                
+                // Create a DataTransfer and dispatch the event
+                const dt = new DataTransfer();
+                dt.items.add(file);
+                uploadButton.files = dt.files;
+                
+                // Dispatch both change and input events
+                uploadButton.dispatchEvent(new Event('change', { bubbles: true }));
+                uploadButton.dispatchEvent(new Event('input', { bubbles: true }));
+                
+                console.log("[Photo Message] Image set successfully");
+            } else {
+                console.error("[Photo Message] Could not find upload button");
+            }
+        } catch (error) {
+            console.error("[Photo Message] Error setting image:", error);
+        }
+    }, 100);
+}
+"""
+
 # Store received photos
 photos = []
 
@@ -149,6 +318,11 @@ def on_ui_tabs():
     """Register UI components"""
     try:
         print("\n[Photo Message] Creating UI tab...")
+        
+        # Import required modules
+        from modules import shared, scripts, script_callbacks, ui
+        import modules.scripts as scripts_module
+        
         with gr.Blocks(analytics_enabled=False) as photo_message_tab:
             gr.Markdown("# Photo Message Extension")
             gr.Markdown("Received photos will appear here.")
@@ -176,11 +350,12 @@ def on_ui_tabs():
                         show_label=True,
                         interactive=False,
                         type="pil",
+                        elem_id="photo_message_image",
                         height=400
                     )
-                    with gr.Row():
-                        send_to_img2img = gr.Button("Send to img2img", variant="primary")
-                        send_to_txt2img = gr.Button("Use as ControlNet input", variant="primary")
+                    with gr.Row(elem_id="photo_message_buttons", elem_classes="image-buttons"):
+                        send_to_img2img = gr.Button('🖼️', elem_id="photo_message_send_to_img2img", tooltip="Send image to img2img tab", variant="tool")
+                        send_to_extras = gr.Button('📐', elem_id="photo_message_send_to_extras", tooltip="Send image to extras tab", variant="tool")
                     status_text = gr.Textbox(label="Status", interactive=False, value="No image selected")
             
             def on_select(evt: gr.SelectData, current_value):
@@ -188,28 +363,23 @@ def on_ui_tabs():
                     print(f"[Photo Message] Selection event: {evt.index}")
                     print(f"[Photo Message] Current dataframe value:\n{current_value}")
                     
-                    # Check if we have any data
                     if current_value is None or len(current_value.index) == 0:
                         print("[Photo Message] No data in DataFrame")
                         return None
                         
-                    # Get the selected row using iloc
                     try:
                         row_idx = evt.index[0]
                         if row_idx >= len(current_value.index):
                             print("[Photo Message] Selected index out of range")
                             return None
                             
-                        # Get timestamp from the first column
-                        timestamp = current_value.iloc[row_idx, 0]  # Get first column value
+                        timestamp = current_value.iloc[row_idx, 0]
                         print(f"[Photo Message] Selected timestamp: {timestamp}")
                         
-                        # Debug the photos list
                         print(f"[Photo Message] Current photos in memory: {len(photos)}")
                         for p in photos:
                             print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
                         
-                        # Get and return the image
                         image = get_photo_by_timestamp(timestamp)
                         if image is not None:
                             print("[Photo Message] Successfully loaded image")
@@ -226,102 +396,113 @@ def on_ui_tabs():
                     print(f"[Photo Message] Error selecting photo: {e}")
                     print(traceback.format_exc())
                     return None
-            
-            def send_to_img2img_tab(image):
-                if image is not None:
-                    try:
-                        print("[Photo Message] Attempting to send image to img2img...")
-                        
-                        # Import A1111's image handling modules
-                        from modules import images, shared
-                        
-                        # Convert PIL Image to the format A1111 expects
-                        try:
-                            # Convert to numpy array first
-                            img_array = np.array(image)
-                            
-                            # Save to shared state the way A1111 does it
-                            shared.state.assign_current_image(img_array)
-                            shared.state.current_image = img_array
-                            
-                            # Also try to set it directly in the img2img tab
-                            shared.state.img2img_image = img_array
-                            shared.state.img2img_batch = shared.state.img2img_image
-                            
-                            print("[Photo Message] Successfully set image in shared state")
-                            return "Image sent to img2img tab. Please switch to img2img tab."
-                        except Exception as e:
-                            print(f"[Photo Message] Error setting image in shared state: {e}")
-                            print(traceback.format_exc())
-                        
-                        return "Could not send image to img2img. Please try copying and pasting manually."
-                    except Exception as e:
-                        print(f"[Photo Message] Error sending to img2img: {e}")
-                        print(traceback.format_exc())
-                        return f"Error: {str(e)}"
-                return "No image selected"
 
-            def send_to_txt2img_tab(image):
+            def send_image_to_tab(image, tab_name):
                 if image is not None:
                     try:
-                        print("[Photo Message] Attempting to send image to ControlNet...")
-                        
-                        # Import A1111's modules
-                        from modules import shared, scripts
-                        
-                        # Convert PIL Image to numpy array
-                        img_array = np.array(image)
-                        
-                        # Find the ControlNet script
-                        found = False
-                        for script in scripts.scripts_txt2img.alwayson_scripts:
-                            try:
-                                if hasattr(script, 'title') and callable(script.title):
-                                    title = script.title().lower()
-                                    if "controlnet" in title:
-                                        print(f"[Photo Message] Found ControlNet script: {title}")
-                                        
-                                        # Get the script's module
-                                        if hasattr(script, 'module'):
-                                            module = script.module
-                                            print(f"[Photo Message] Found ControlNet module")
-                                            
-                                            # Set the image using the module's methods
-                                            if hasattr(module, 'set_input_image'):
-                                                module.set_input_image(img_array)
-                                                found = True
-                                                print("[Photo Message] Set image using module's set_input_image")
-                                            elif hasattr(module, 'input_image'):
-                                                module.input_image = img_array
-                                                found = True
-                                                print("[Photo Message] Set image using module's input_image")
-                                            
-                                            # Try to enable the module
-                                            if hasattr(module, 'enabled'):
-                                                module.enabled = True
-                                                print("[Photo Message] Enabled ControlNet module")
-                                            
-                                            break
-                            except Exception as e:
-                                print(f"[Photo Message] Error with script {script}: {e}")
-                                continue
-                        
-                        if found:
-                            return "Image sent to ControlNet. Please switch to txt2img tab and check ControlNet panel."
-                        else:
-                            return "Could not find ControlNet. Please make sure ControlNet extension is installed and enabled."
-                            
+                        print(f"[Photo Message] Sending image to {tab_name}...")
+                        # Convert PIL Image to base64
+                        import base64
+                        from io import BytesIO
+                        buffered = BytesIO()
+                        image.save(buffered, format="PNG")
+                        img_str = base64.b64encode(buffered.getvalue()).decode()
+                        return f"data:image/png;base64,{img_str}"
                     except Exception as e:
-                        print(f"[Photo Message] Error sending to ControlNet: {e}")
+                        print(f"[Photo Message] Error preparing image: {e}")
                         print(traceback.format_exc())
-                        return f"Error: {str(e)}"
-                return "No image selected"
-            
+                return None
+
             # Wire up the events
-            refresh_btn.click(update_photo_list, outputs=[photo_list])
-            photo_list.select(on_select, inputs=[photo_list], outputs=[preview_image])
-            send_to_img2img.click(send_to_img2img_tab, inputs=[preview_image], outputs=[status_text])
-            send_to_txt2img.click(send_to_txt2img_tab, inputs=[preview_image], outputs=[status_text])
+            refresh_btn.click(fn=update_photo_list, outputs=[photo_list])
+            photo_list.select(fn=on_select, inputs=[photo_list], outputs=[preview_image])
+            
+            # Add click handlers for the buttons with image data
+            send_to_img2img.click(
+                fn=send_image_to_tab,
+                inputs=[preview_image],
+                outputs=[status_text],
+                _js="""
+                async (img_data) => {
+                    if (!img_data) return "No image selected";
+                    console.log("[Photo Message] Sending to img2img...");
+                    
+                    // Switch to img2img tab
+                    const tabs = gradioApp().querySelector('#tabs');
+                    if (tabs) tabs.querySelectorAll('button')[1].click();
+                    
+                    await new Promise(r => setTimeout(r, 100));  // Wait for tab switch
+                    
+                    try {
+                        const img2imgInput = gradioApp().querySelector('#img2img_image input[type="file"]');
+                        if (!img2imgInput) {
+                            console.error("[Photo Message] Could not find img2img input");
+                            return "Could not find img2img input";
+                        }
+                        
+                        // Create file from image data
+                        const res = await fetch(img_data);
+                        const blob = await res.blob();
+                        const file = new File([blob], "image.png", { type: "image/png" });
+                        
+                        // Set the file
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        img2imgInput.files = dt.files;
+                        img2imgInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        
+                        console.log("[Photo Message] Image sent successfully");
+                        return "Image sent to img2img";
+                    } catch (error) {
+                        console.error("[Photo Message] Error:", error);
+                        return "Error sending image: " + error.message;
+                    }
+                }
+                """
+            )
+            
+            send_to_extras.click(
+                fn=send_image_to_tab,
+                inputs=[preview_image],
+                outputs=[status_text],
+                _js="""
+                async (img_data) => {
+                    if (!img_data) return "No image selected";
+                    console.log("[Photo Message] Sending to extras...");
+                    
+                    // Switch to extras tab
+                    const tabs = gradioApp().querySelector('#tabs');
+                    if (tabs) tabs.querySelectorAll('button')[2].click();
+                    
+                    await new Promise(r => setTimeout(r, 100));  // Wait for tab switch
+                    
+                    try {
+                        const extrasInput = gradioApp().querySelector('#extras_image input[type="file"]');
+                        if (!extrasInput) {
+                            console.error("[Photo Message] Could not find extras input");
+                            return "Could not find extras input";
+                        }
+                        
+                        // Create file from image data
+                        const res = await fetch(img_data);
+                        const blob = await res.blob();
+                        const file = new File([blob], "image.png", { type: "image/png" });
+                        
+                        // Set the file
+                        const dt = new DataTransfer();
+                        dt.items.add(file);
+                        extrasInput.files = dt.files;
+                        extrasInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        
+                        console.log("[Photo Message] Image sent successfully");
+                        return "Image sent to extras";
+                    } catch (error) {
+                        console.error("[Photo Message] Error:", error);
+                        return "Error sending image: " + error.message;
+                    }
+                }
+                """
+            )
             
         print("[Photo Message] UI tab created successfully")
         return [(photo_message_tab, "Photo Message", "photo_message_a1111")]
