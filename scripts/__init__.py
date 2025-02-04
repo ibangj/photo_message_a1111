@@ -211,11 +211,12 @@ function switch_to_extras() {
 photos = []
 
 class PhotoMessage:
-    def __init__(self, image_data, name, message, timestamp):
-        self.image_data = image_data  # Base64 encoded image data
+    def __init__(self, image_data, name, message, timestamp, is_sent=False):
+        self.image_data = image_data
         self.name = name
         self.message = message
         self.timestamp = timestamp
+        self.is_sent = is_sent
 
 class PhotoRequest(BaseModel):
     image: str
@@ -327,10 +328,10 @@ def get_photo_by_timestamp(timestamp):
     return None
 
 def update_photo_list():
-    photo_data = [[p.timestamp, p.name, p.message] for p in photos]
+    photo_data = [[p.timestamp, p.name, p.message, "✓" if p.is_sent else ""] for p in photos]
     print(f"[Photo Message] Updating photo list with {len(photo_data)} photos")
-    # Convert to DataFrame
-    df = pd.DataFrame(photo_data, columns=["Time", "Name", "Message"])
+    # Convert to DataFrame with sent status
+    df = pd.DataFrame(photo_data, columns=["Time", "Name", "Message", "Sent"])
     return df
 
 def on_select(evt: gr.SelectData, current_value):
@@ -392,6 +393,91 @@ def send_image_to_tab(image):
         print(traceback.format_exc())
         return error_msg
 
+def send_to_api(source_photo_data, generated_image):
+    if source_photo_data is None or generated_image is None:
+        return "Please select both a source photo and a generated image"
+        
+    try:
+        print("[Photo Message] Sending images to API...")
+        
+        # Get metadata from source photo
+        source_photo = None
+        for photo in photos:
+            if photo.timestamp == source_photo_data['timestamp']:
+                source_photo = photo
+                if photo.is_sent:
+                    return "This photo has already been processed"
+                break
+                
+        if source_photo is None:
+            return "Source photo not found in memory"
+            
+        # Convert generated image to base64
+        buffered = io.BytesIO()
+        generated_image.save(buffered, format="JPEG", quality=95)
+        generated_img_str = base64.b64encode(buffered.getvalue()).decode()
+        
+        # Prepare the payload with both images
+        payload = {
+            "source_image": source_photo.image_data,
+            "generated_image": f"data:image/jpeg;base64,{generated_img_str}",
+            "name": source_photo.name,
+            "message": source_photo.message,
+            "timestamp": source_photo.timestamp
+        }
+        
+        try:
+            # First try WebSocket if available
+            if hasattr(sio, 'connected') and sio.connected:
+                print("[Photo Message] Sending via WebSocket...")
+                sio.emit('new_photo', json.dumps(payload))
+                
+                # Mark the photo as sent
+                source_photo.is_sent = True
+                
+                # Update the UI to show sent status
+                update_photo_list()
+                
+                return "Images sent successfully via WebSocket"
+                
+            # Fallback to HTTP endpoint
+            print("[Photo Message] Sending via HTTP...")
+            response = requests.post(
+                "http://localhost:5001/new_photo",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                # Mark the photo as sent
+                source_photo.is_sent = True
+                
+                # Update the UI to show sent status
+                update_photo_list()
+                
+                return "Images sent successfully via HTTP"
+            else:
+                error_msg = f"Error sending images: {response.status_code} - {response.text}"
+                print(f"[Photo Message] {error_msg}")
+                return error_msg
+                
+        except requests.exceptions.ConnectionError:
+            error_msg = "Could not connect to display app - make sure it's running"
+            print(f"[Photo Message] {error_msg}")
+            return error_msg
+        except Exception as e:
+            error_msg = f"Error sending to display app: {str(e)}"
+            print(f"[Photo Message] {error_msg}")
+            print(traceback.format_exc())
+            return error_msg
+            
+    except Exception as e:
+        error_msg = f"Error preparing images: {str(e)}"
+        print(f"[Photo Message] {error_msg}")
+        print(traceback.format_exc())
+        return error_msg
+
 def on_ui_tabs():
     """Register UI components"""
     try:
@@ -411,13 +497,15 @@ def on_ui_tabs():
                 with gr.Column(scale=2, variant="panel"):
                     gr.Markdown("### 📥 Received Photos")
                     with gr.Row():
-                        # Initialize with DataFrame
-                        initial_df = pd.DataFrame([[p.timestamp, p.name, p.message] for p in photos], 
-                                               columns=["Time", "Name", "Message"])
+                        # Initialize with DataFrame including sent status
+                        initial_df = pd.DataFrame(
+                            [[p.timestamp, p.name, p.message, "✓" if p.is_sent else ""] for p in photos],
+                            columns=["Time", "Name", "Message", "Sent"]
+                        )
                         photo_list = gr.Dataframe(
-                            headers=["Time", "Name", "Message"],
-                            row_count=8,  # Reduced row count for better layout
-                            col_count=(3, "fixed"),
+                            headers=["Time", "Name", "Message", "Sent"],
+                            row_count=8,
+                            col_count=(4, "fixed"),
                             interactive=True,
                             elem_id="photo_list",
                             value=initial_df
@@ -428,17 +516,17 @@ def on_ui_tabs():
                     # Preview area for selected photo
                     with gr.Column():
                         preview_image = gr.Image(
-                            label="Selected Photo Preview",
+                            label="Selected Source Photo",
                             show_label=True,
                             interactive=False,
                             type="pil",
                             elem_id="photo_message_image",
                             height=300
                         )
-                        with gr.Row(elem_id="photo_message_buttons"):
-                            send_to_img2img = gr.Button('📝 Send to Img2img', elem_id="photo_message_send_to_img2img", variant="primary")
-                            send_to_extras = gr.Button('🔧 Send to Extras', elem_id="photo_message_send_to_extras", variant="primary")
-                        status_text = gr.Textbox(label="Status", interactive=False, value="No image selected", visible=False)
+                        selected_photo_info = gr.JSON(
+                            label="Selected Photo Info",
+                            visible=False
+                        )
                 
                 # Right panel - Generated Images
                 with gr.Column(scale=3, variant="panel"):
@@ -446,21 +534,18 @@ def on_ui_tabs():
                         gr.Markdown("### 🎨 Generated Images")
                         refresh_generated_btn = gr.Button("🔄 Refresh", size="sm", variant="secondary")
                     
-                    # Gallery with larger preview
                     generated_gallery = gr.Gallery(
                         label="Recent Generations",
                         show_label=False,
                         elem_id="photo_message_generated",
                         columns=4,
                         height=300,
-                        preview=True,
-                        object_fit="contain"
+                        preview=True
                     )
                     
-                    # Selected image preview and controls
                     with gr.Column():
                         selected_generated_image = gr.Image(
-                            label="Selected Image Preview",
+                            label="Selected Generated Image",
                             show_label=True,
                             interactive=False,
                             type="pil",
@@ -468,12 +553,16 @@ def on_ui_tabs():
                             height=200
                         )
                         with gr.Row():
-                            send_selected_btn = gr.Button("📤 Send to Display App", size="sm", variant="primary")
-                            clear_generated_btn = gr.Button("🗑️ Clear Gallery", size="sm", variant="secondary")
+                            send_selected_btn = gr.Button(
+                                "📤 Send to Display App",
+                                size="sm",
+                                variant="primary",
+                                interactive=False  # Initially disabled
+                            )
                         send_status = gr.Textbox(
                             label="Send Status",
                             interactive=False,
-                            visible=False
+                            visible=True
                         )
             
             # Help text at the bottom
@@ -571,144 +660,86 @@ def on_ui_tabs():
                     print(traceback.format_exc())
                     return []
             
-            def send_to_api(image):
-                if image is not None:
-                    try:
-                        print("[Photo Message] Sending image to API...")
-                        # Convert PIL Image to base64
-                        buffered = io.BytesIO()
-                        image.save(buffered, format="JPEG", quality=95)
-                        img_str = base64.b64encode(buffered.getvalue()).decode()
-                        
-                        # Prepare the payload
-                        payload = {
-                            "image": img_str,
-                            "name": "Stable Diffusion",
-                            "message": "Generated with A1111",
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        
-                        try:
-                            # Check WebSocket connection
-                            if not sio.connected:
-                                print("[Photo Message] WebSocket not connected, attempting to reconnect...")
-                                try:
-                                    # Ensure we're disconnected before trying to connect
-                                    try:
-                                        sio.disconnect()
-                                    except:
-                                        pass
-                                    
-                                    # Wait a moment before reconnecting
-                                    time.sleep(1)
-                                    
-                                    # Try to connect with a timeout
-                                    sio.connect('http://localhost:5001', wait_timeout=5)
-                                    print("[Photo Message] Successfully reconnected to display app")
-                                except Exception as e:
-                                    error_msg = f"Could not connect to display app: {str(e)}"
-                                    print(f"[Photo Message] {error_msg}")
-                                    return error_msg
-                        
-                            print("[Photo Message] Sending via WebSocket...")
-                            # Send as a dictionary directly (no need to convert to JSON string)
-                            sio.emit('new_photo', payload)
-                            return "Image sent successfully via WebSocket"
-                                
-                        except Exception as e:
-                            error_msg = f"Error sending to display app: {str(e)}"
-                            print(f"[Photo Message] {error_msg}")
-                            print(traceback.format_exc())
-                            return error_msg
-                            
-                    except Exception as e:
-                        error_msg = f"Error preparing image: {str(e)}"
-                        print(f"[Photo Message] {error_msg}")
-                        print(traceback.format_exc())
-                        return error_msg
-                        
-                return "No image selected"
+            def update_send_button_state(source_info, generated_img):
+                can_send = source_info is not None and generated_img is not None
+                if source_info and isinstance(source_info, dict) and source_info.get('is_sent', False):
+                    return gr.Button.update(interactive=False, value="Already Sent")
+                return gr.Button.update(interactive=can_send)
             
-            def on_gallery_select(evt: gr.SelectData, gallery):
+            def on_photo_select(evt: gr.SelectData, current_value):
                 try:
-                    print(f"[Photo Message] Gallery selection event: {evt.index}")
-                    if gallery is None:
-                        print("[Photo Message] Gallery is empty")
-                        return None
-                    
-                    if evt.index >= len(gallery):
-                        print("[Photo Message] Selected index out of range")
-                        return None
+                    if current_value is None or len(current_value.index) == 0:
+                        return None, None
                         
-                    selected = gallery[evt.index]
-                    print(f"[Photo Message] Selected image type: {type(selected)}")
-                    print(f"[Photo Message] Selected image data: {selected}")  # Debug print
+                    row_idx = evt.index[0]
+                    if row_idx >= len(current_value.index):
+                        return None, None
+                        
+                    timestamp = current_value.iloc[row_idx, 0]
                     
-                    # Handle dictionary case (from gallery component)
-                    if isinstance(selected, dict):
-                        # Try different possible keys
-                        for key in ['name', 'path', 'orig_name', 'image']:
-                            if key in selected:
-                                print(f"[Photo Message] Found key: {key}")
-                                selected = selected[key]
-                                break
-                        else:
-                            print(f"[Photo Message] Available keys in dict: {selected.keys()}")
-                            return None
+                    # Find the photo in our list
+                    for photo in photos:
+                        if photo.timestamp == timestamp:
+                            # Create info dict with metadata and sent status
+                            photo_info = {
+                                'timestamp': photo.timestamp,
+                                'name': photo.name,
+                                'message': photo.message,
+                                'is_sent': photo.is_sent
+                            }
                             
-                    # Handle different image formats
-                    if isinstance(selected, (str, bytes)):
-                        # If it's a path or bytes, open it with PIL
-                        try:
-                            selected = Image.open(selected)
-                        except Exception as e:
-                            print(f"[Photo Message] Error opening image: {e}")
-                            return None
-                    elif isinstance(selected, np.ndarray):
-                        # If it's a numpy array, convert to PIL
-                        selected = Image.fromarray(selected)
-                    elif not isinstance(selected, Image.Image):
-                        print(f"[Photo Message] Unsupported image type: {type(selected)}")
-                        return None
-                    
-                    # Ensure the image is in RGB mode
-                    if selected.mode != 'RGB':
-                        selected = selected.convert('RGB')
-                        
-                    print("[Photo Message] Successfully selected and converted image from gallery")
-                    return selected
+                            # Get the image
+                            try:
+                                image_bytes = base64.b64decode(photo.image_data)
+                                image = Image.open(io.BytesIO(image_bytes))
+                                return image, photo_info
+                            except Exception as e:
+                                print(f"Error decoding image: {e}")
+                                return None, None
+                                
+                    return None, None
                 except Exception as e:
-                    print(f"[Photo Message] Error in gallery selection: {e}")
+                    print(f"Error in photo selection: {e}")
                     print(traceback.format_exc())
-                    return None
+                    return None, None
             
             # Wire up the events
             refresh_btn.click(fn=update_photo_list, outputs=[photo_list])
-            photo_list.select(fn=on_select, inputs=[photo_list], outputs=[preview_image])
             
-            # Gallery events
-            refresh_generated_btn.click(
-                fn=get_generated_images,
-                outputs=[generated_gallery]
+            # Update source photo selection
+            photo_list.select(
+                fn=on_photo_select,
+                inputs=[photo_list],
+                outputs=[preview_image, selected_photo_info]
+            ).then(
+                fn=update_send_button_state,
+                inputs=[selected_photo_info, selected_generated_image],
+                outputs=[send_selected_btn]
             )
             
-            # Connect gallery selection to preview
+            # Update generated image selection
             generated_gallery.select(
                 fn=on_gallery_select,
                 inputs=[generated_gallery],
                 outputs=[selected_generated_image]
-            )
-            
-            clear_generated_btn.click(
-                fn=lambda: (None, "Gallery cleared"),
-                outputs=[generated_gallery, send_status]
+            ).then(
+                fn=update_send_button_state,
+                inputs=[selected_photo_info, selected_generated_image],
+                outputs=[send_selected_btn]
             )
             
             # Connect send button to API
             send_selected_btn.click(
                 fn=send_to_api,
-                inputs=[selected_generated_image],
+                inputs=[selected_photo_info, selected_generated_image],
                 outputs=[send_status]
+            ).then(
+                fn=update_photo_list,
+                outputs=[photo_list]
+            ).then(
+                fn=update_send_button_state,
+                inputs=[selected_photo_info, selected_generated_image],
+                outputs=[send_selected_btn]
             )
             
             # Add click handlers for the buttons with image data
