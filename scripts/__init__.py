@@ -419,7 +419,7 @@ def send_to_api(source_photo_data, generated_image):
         
         # Prepare the payload with both images
         payload = {
-            "source_image": source_photo.image_data,
+            "source_image": f"data:image/jpeg;base64,{source_photo.image_data}",
             "generated_image": f"data:image/jpeg;base64,{generated_img_str}",
             "name": source_photo.name,
             "message": source_photo.message,
@@ -430,20 +430,19 @@ def send_to_api(source_photo_data, generated_image):
             # First try WebSocket if available
             if hasattr(sio, 'connected') and sio.connected:
                 print("[Photo Message] Sending via WebSocket...")
-                sio.emit('new_photo', json.dumps(payload))
+                # Send as a plain dictionary, socketio will handle JSON conversion
+                sio.emit('new_photo', payload)
                 
                 # Mark the photo as sent
                 source_photo.is_sent = True
                 
-                # Update the UI to show sent status
-                update_photo_list()
-                
+                print("[Photo Message] Successfully sent via WebSocket")
                 return "Images sent successfully via WebSocket"
                 
             # Fallback to HTTP endpoint
-            print("[Photo Message] Sending via HTTP...")
+            print("[Photo Message] WebSocket not available, sending via HTTP...")
             response = requests.post(
-                "http://localhost:5001/new_photo",
+                "http://localhost:5001/photo",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=10
@@ -452,10 +451,7 @@ def send_to_api(source_photo_data, generated_image):
             if response.status_code == 200:
                 # Mark the photo as sent
                 source_photo.is_sent = True
-                
-                # Update the UI to show sent status
-                update_photo_list()
-                
+                print("[Photo Message] Successfully sent via HTTP")
                 return "Images sent successfully via HTTP"
             else:
                 error_msg = f"Error sending images: {response.status_code} - {response.text}"
@@ -523,6 +519,10 @@ def on_ui_tabs():
                             elem_id="photo_message_image",
                             height=300
                         )
+                        with gr.Row():
+                            send_to_img2img = gr.Button('📝 Send to Img2img', elem_id="photo_message_send_to_img2img", variant="primary")
+                            send_to_extras = gr.Button('🔧 Send to Extras', elem_id="photo_message_send_to_extras", variant="primary")
+                        status_text = gr.Textbox(label="Status", interactive=False, value="No image selected", visible=True)
                         selected_photo_info = gr.JSON(
                             label="Selected Photo Info",
                             visible=False
@@ -661,10 +661,31 @@ def on_ui_tabs():
                     return []
             
             def update_send_button_state(source_info, generated_img):
-                can_send = source_info is not None and generated_img is not None
-                if source_info and isinstance(source_info, dict) and source_info.get('is_sent', False):
-                    return gr.Button.update(interactive=False, value="Already Sent")
-                return gr.Button.update(interactive=can_send)
+                """Update the send button state based on selection state"""
+                try:
+                    print("[Photo Message] Updating send button state...")
+                    print(f"Source info: {source_info}")
+                    print(f"Generated image type: {type(generated_img)}")
+                    
+                    # Check if we have both a source photo and a generated image
+                    has_source = source_info is not None and isinstance(source_info, dict)
+                    has_generated = generated_img is not None
+                    
+                    if has_source and has_generated:
+                        if source_info.get('is_sent', False):
+                            print("[Photo Message] Source photo already sent")
+                            return gr.Button.update(interactive=False, value="Already Sent")
+                        else:
+                            print("[Photo Message] Both images selected, enabling button")
+                            return gr.Button.update(interactive=True, value="📤 Send to Display App")
+                    else:
+                        print("[Photo Message] Missing required selections")
+                        return gr.Button.update(interactive=False, value="Select both images")
+                    
+                except Exception as e:
+                    print(f"[Photo Message] Error updating button state: {e}")
+                    print(traceback.format_exc())
+                    return gr.Button.update(interactive=False, value="Error")
             
             def on_photo_select(evt: gr.SelectData, current_value):
                 try:
@@ -829,6 +850,12 @@ def on_ui_tabs():
                 """
             )
             
+            # Connect refresh button to get_generated_images
+            refresh_generated_btn.click(
+                fn=get_generated_images,
+                outputs=[generated_gallery]
+            )
+            
         print("[Photo Message] UI tab created successfully")
         return [(photo_message_tab, "Photo Message", "photo_message_a1111")]
     except Exception as e:
@@ -842,4 +869,127 @@ print("\n[Photo Message] Registering callbacks...")
 script_callbacks.on_app_started(on_app_started)
 script_callbacks.on_ui_tabs(on_ui_tabs)
 
-print("[Photo Message] Extension initialization completed") 
+print("[Photo Message] Extension initialization completed")
+
+def on_gallery_select(evt: gr.SelectData, gallery):
+    """Handle selection of an image from the generated images gallery"""
+    try:
+        print(f"[Photo Message] Gallery selection event: {evt.index}")
+        if gallery is None or not isinstance(gallery, list):
+            print("[Photo Message] Gallery is empty or invalid")
+            return None
+        
+        if evt.index >= len(gallery):
+            print("[Photo Message] Selected index out of range")
+            return None
+            
+        selected = gallery[evt.index]
+        print(f"[Photo Message] Selected image type: {type(selected)}")
+        print(f"[Photo Message] Selected image data: {selected}")  # Debug print
+        
+        # Handle dictionary case from gallery
+        if isinstance(selected, dict):
+            # Try to get the file path from the dictionary
+            if 'name' in selected:
+                # Use the local file path directly
+                file_path = selected['name']
+                print(f"[Photo Message] Using file path: {file_path}")
+                try:
+                    img = Image.open(file_path)
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    print("[Photo Message] Successfully loaded image from temp file")
+                    return img
+                except Exception as e:
+                    print(f"[Photo Message] Error opening temp file: {e}")
+                    
+            # If we couldn't get the file directly, try the data URL
+            if 'data' in selected and isinstance(selected['data'], str):
+                if selected['data'].startswith('http'):
+                    try:
+                        response = requests.get(selected['data'], timeout=5)
+                        if response.status_code == 200:
+                            img = Image.open(io.BytesIO(response.content))
+                            if img.mode != 'RGB':
+                                img = img.convert('RGB')
+                            print("[Photo Message] Successfully loaded image from URL")
+                            return img
+                    except Exception as e:
+                        print(f"[Photo Message] Error loading from URL: {e}")
+                        
+            print(f"[Photo Message] Available keys in dict: {list(selected.keys())}")
+            return None
+        
+        # If it's already a PIL Image, return it
+        if isinstance(selected, Image.Image):
+            if selected.mode != 'RGB':
+                selected = selected.convert('RGB')
+            print("[Photo Message] Successfully selected PIL Image from gallery")
+            return selected
+            
+        # Handle path string
+        if isinstance(selected, str):
+            try:
+                img = Image.open(selected)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                print("[Photo Message] Successfully loaded image from path")
+                return img
+            except Exception as e:
+                print(f"[Photo Message] Error opening image from path: {e}")
+                return None
+                
+        # Handle numpy array
+        if isinstance(selected, np.ndarray):
+            try:
+                img = Image.fromarray(selected)
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+                print("[Photo Message] Successfully converted numpy array to image")
+                return img
+            except Exception as e:
+                print(f"[Photo Message] Error converting numpy array: {e}")
+                return None
+                
+        print(f"[Photo Message] Unsupported image type: {type(selected)}")
+        return None
+        
+    except Exception as e:
+        print(f"[Photo Message] Error in gallery selection: {e}")
+        print(traceback.format_exc())
+        return None
+
+# Improve WebSocket connection handling
+def connect_to_display_app():
+    """Attempt to connect to the display app with better error handling"""
+    try:
+        if hasattr(sio, 'connected') and sio.connected:
+            print("[Photo Message] Already connected to display app")
+            return True
+            
+        print("[Photo Message] Attempting to connect to display app...")
+        
+        # Ensure we're disconnected first
+        try:
+            sio.disconnect()
+        except:
+            pass
+            
+        # Wait a moment before reconnecting
+        time.sleep(1)
+        
+        # Connect with a timeout
+        sio.connect('http://localhost:5001', wait_timeout=5, wait=True)
+        print("[Photo Message] Successfully connected to display app")
+        return True
+        
+    except Exception as e:
+        print(f"[Photo Message] Could not connect to display app: {e}")
+        print("[Photo Message] Will retry connection when sending images")
+        return False
+
+# Update the initial connection attempt
+try:
+    connect_to_display_app()
+except Exception as e:
+    print(f"[Photo Message] Initial connection attempt failed: {e}") 
