@@ -212,7 +212,11 @@ photos = []
 
 class PhotoMessage:
     def __init__(self, image_data, name, message, timestamp, is_sent=False):
-        self.image_data = image_data
+        # Remove any existing prefix to ensure clean data
+        if isinstance(image_data, str) and 'base64,' in image_data:
+            self.image_data = image_data.split('base64,')[1]
+        else:
+            self.image_data = image_data
         self.name = name
         self.message = message
         self.timestamp = timestamp
@@ -316,8 +320,13 @@ def get_photo_by_timestamp(timestamp):
     for photo in photos:
         if photo.timestamp == timestamp:
             try:
+                # Handle base64 data without prefix
+                image_data = photo.image_data
+                if not image_data.startswith('data:image/jpeg;base64,'):
+                    image_data = f"data:image/jpeg;base64,{image_data}"
+                    
                 # Convert base64 to image data
-                image_bytes = base64.b64decode(photo.image_data)
+                image_bytes = base64.b64decode(image_data.split('base64,')[1])
                 # Create a PIL Image from bytes
                 image = Image.open(io.BytesIO(image_bytes))
                 return image
@@ -393,6 +402,28 @@ def send_image_to_tab(image):
         print(traceback.format_exc())
         return error_msg
 
+def format_base64_image(img_data):
+    """Ensure image data has the correct base64 prefix"""
+    try:
+        if isinstance(img_data, str):
+            # If it's already a string (base64)
+            # First remove any existing prefix
+            if 'base64,' in img_data:
+                img_data = img_data.split('base64,')[1]
+            return f"data:image/jpeg;base64,{img_data}"
+        else:
+            # If it's a PIL Image
+            buffered = io.BytesIO()
+            if img_data.mode != 'RGB':
+                img_data = img_data.convert('RGB')
+            img_data.save(buffered, format="JPEG", quality=95)
+            img_str = base64.b64encode(buffered.getvalue()).decode()
+            return f"data:image/jpeg;base64,{img_str}"
+    except Exception as e:
+        print(f"Error formatting base64 image: {e}")
+        print(traceback.format_exc())
+        return None
+
 def send_to_api(source_photo_data, generated_image):
     if source_photo_data is None or generated_image is None:
         return "Please select both a source photo and a generated image"
@@ -412,29 +443,37 @@ def send_to_api(source_photo_data, generated_image):
         if source_photo is None:
             return "Source photo not found in memory"
             
-        # Convert generated image to base64
-        buffered = io.BytesIO()
-        generated_image.save(buffered, format="JPEG", quality=95)
-        generated_img_str = base64.b64encode(buffered.getvalue()).decode()
+        # Format both images consistently
+        source_img = format_base64_image(source_photo.image_data)
+        generated_img = format_base64_image(generated_image)
         
-        # Prepare the payload with both images
+        if not source_img or not generated_img:
+            return "Error formatting images"
+            
         payload = {
-            "source_image": f"data:image/jpeg;base64,{source_photo.image_data}",
-            "generated_image": f"data:image/jpeg;base64,{generated_img_str}",
+            "source_image": source_img,
+            "generated_image": generated_img,
             "name": source_photo.name,
             "message": source_photo.message,
             "timestamp": source_photo.timestamp
         }
         
+        print("[Photo Message] Payload preview:")
+        print(f"- Name: {payload['name']}")
+        print(f"- Message: {payload['message']}")
+        print(f"- Timestamp: {payload['timestamp']}")
+        print(f"- Source image prefix: {source_img[:50]}")
+        print(f"- Generated image prefix: {generated_img[:50]}")
+        
         try:
             # First try WebSocket if available
             if hasattr(sio, 'connected') and sio.connected:
                 print("[Photo Message] Sending via WebSocket...")
-                # Send as a plain dictionary, socketio will handle JSON conversion
                 sio.emit('new_photo', payload)
                 
                 # Mark the photo as sent
                 source_photo.is_sent = True
+                update_photo_list()  # Update UI immediately
                 
                 print("[Photo Message] Successfully sent via WebSocket")
                 return "Images sent successfully via WebSocket"
@@ -442,7 +481,7 @@ def send_to_api(source_photo_data, generated_image):
             # Fallback to HTTP endpoint
             print("[Photo Message] WebSocket not available, sending via HTTP...")
             response = requests.post(
-                "http://localhost:5001/photo",
+                "http://localhost:5001/new_photo",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=10
@@ -451,6 +490,8 @@ def send_to_api(source_photo_data, generated_image):
             if response.status_code == 200:
                 # Mark the photo as sent
                 source_photo.is_sent = True
+                update_photo_list()  # Update UI immediately
+                
                 print("[Photo Message] Successfully sent via HTTP")
                 return "Images sent successfully via HTTP"
             else:
