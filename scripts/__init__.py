@@ -34,7 +34,7 @@ def disconnect():
 
 # Try to connect to display app
 try:
-    sio.connect('http://localhost:5001')
+    sio.connect('http://203.153.109.225:5001')
 except Exception as e:
     print(f"[Photo Message] Could not connect to display app: {e}")
 
@@ -481,7 +481,7 @@ def send_to_api(source_photo_data, generated_image):
             # Fallback to HTTP endpoint
             print("[Photo Message] WebSocket not available, sending via HTTP...")
             response = requests.post(
-                "http://localhost:5001/new_photo",
+                "http://203.153.109.225:5001/new_photo",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=10
@@ -1020,7 +1020,7 @@ def connect_to_display_app():
         time.sleep(1)
         
         # Connect with a timeout
-        sio.connect('http://localhost:5001', wait_timeout=5, wait=True)
+        sio.connect('http://203.153.109.225:5001', wait_timeout=5, wait=True)
         print("[Photo Message] Successfully connected to display app")
         return True
         
