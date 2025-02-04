@@ -14,6 +14,7 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 import requests
+import time
 
 print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
@@ -320,7 +321,7 @@ def on_ui_tabs():
         print("\n[Photo Message] Creating UI tab...")
         
         # Import required modules
-        from modules import shared, scripts, script_callbacks, ui
+        from modules import shared, scripts, script_callbacks, ui, images
         import modules.scripts as scripts_module
         
         with gr.Blocks(analytics_enabled=False) as photo_message_tab:
@@ -358,64 +359,180 @@ def on_ui_tabs():
                         send_to_extras = gr.Button('📐', elem_id="photo_message_send_to_extras", tooltip="Send image to extras tab", variant="tool")
                     status_text = gr.Textbox(label="Status", interactive=False, value="No image selected")
             
-            def on_select(evt: gr.SelectData, current_value):
+            # Add gallery for generated images
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("## Generated Images")
+                    generated_gallery = gr.Gallery(
+                        label="Generated Images",
+                        show_label=True,
+                        elem_id="photo_message_generated",
+                        columns=4,
+                        height=400,
+                        preview=True
+                    )
+                    selected_generated_image = gr.Image(
+                        label="Selected Generated Image",
+                        show_label=True,
+                        interactive=False,
+                        visible=False,
+                        type="pil"
+                    )
+                    with gr.Row():
+                        refresh_generated_btn = gr.Button("🔄 Refresh Generated", size="sm")
+                        send_selected_btn = gr.Button("📤 Send Selected Image", size="sm")
+                        clear_generated_btn = gr.Button("🗑️ Clear", size="sm")
+            
+            def get_generated_images():
+                """Get all generated images from output directories"""
                 try:
-                    print(f"[Photo Message] Selection event: {evt.index}")
-                    print(f"[Photo Message] Current dataframe value:\n{current_value}")
+                    print("[Photo Message] Getting generated images...")
+                    image_paths = []
                     
-                    if current_value is None or len(current_value.index) == 0:
-                        print("[Photo Message] No data in DataFrame")
-                        return None
-                        
-                    try:
-                        row_idx = evt.index[0]
-                        if row_idx >= len(current_value.index):
-                            print("[Photo Message] Selected index out of range")
-                            return None
+                    # Get paths from various output directories
+                    dirs_to_check = []
+                    
+                    # Get output directories from shared options
+                    if hasattr(shared.opts, 'outdir_samples'):
+                        dirs_to_check.append(shared.opts.outdir_samples)
+                    if hasattr(shared.opts, 'outdir_txt2img_samples'):
+                        dirs_to_check.append(shared.opts.outdir_txt2img_samples)
+                    if hasattr(shared.opts, 'outdir_img2img_samples'):
+                        dirs_to_check.append(shared.opts.outdir_img2img_samples)
+                    if hasattr(shared.opts, 'outdir_extras_samples'):
+                        dirs_to_check.append(shared.opts.outdir_extras_samples)
+                    
+                    print(f"[Photo Message] Checking directories: {dirs_to_check}")
+                    
+                    # Keep track of processed files to avoid duplicates
+                    processed_files = set()
+                    
+                    for dir_path in dirs_to_check:
+                        if dir_path and os.path.exists(dir_path):
+                            print(f"[Photo Message] Scanning directory: {dir_path}")
                             
-                        timestamp = current_value.iloc[row_idx, 0]
-                        print(f"[Photo Message] Selected timestamp: {timestamp}")
+                            # Get all image files in directory and subdirectories
+                            for root, _, files in os.walk(dir_path):
+                                for filename in files:
+                                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                                        full_path = os.path.join(root, filename)
+                                        
+                                        # Skip if we've already processed this file
+                                        if full_path in processed_files:
+                                            continue
+                                            
+                                        try:
+                                            # Get file modification time
+                                            mtime = os.path.getmtime(full_path)
+                                            
+                                            # Only include files from the last hour
+                                            if time.time() - mtime <= 3600:  # 3600 seconds = 1 hour
+                                                image_paths.append((full_path, mtime))
+                                                processed_files.add(full_path)
+                                        except Exception as e:
+                                            print(f"[Photo Message] Error getting file info for {full_path}: {e}")
+                    
+                    if not image_paths:
+                        print("[Photo Message] No recent generated images found")
+                        return []
                         
-                        print(f"[Photo Message] Current photos in memory: {len(photos)}")
-                        for p in photos:
-                            print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
-                        
-                        image = get_photo_by_timestamp(timestamp)
-                        if image is not None:
-                            print("[Photo Message] Successfully loaded image")
-                            return image
-                        else:
-                            print("[Photo Message] Failed to load image")
-                            return None
+                    # Sort by modification time (newest first)
+                    image_paths.sort(key=lambda x: x[1], reverse=True)
+                    
+                    # Load images
+                    loaded_images = []
+                    for path, _ in image_paths[:20]:  # Limit to 20 most recent images
+                        try:
+                            # Try to read generation parameters from the image
+                            img = Image.open(path)
                             
-                    except IndexError as ie:
-                        print(f"[Photo Message] Index error: {ie}")
-                        return None
+                            # Try to get generation info
+                            try:
+                                geninfo = ''
+                                if hasattr(images, 'read_info_from_image'):
+                                    geninfo, _ = images.read_info_from_image(img)
+                                print(f"[Photo Message] Image info for {path}: {geninfo[:100]}...")
+                            except Exception as e:
+                                print(f"[Photo Message] Could not read image info: {e}")
+                            
+                            loaded_images.append(img)
+                            print(f"[Photo Message] Loaded image: {path}")
+                        except Exception as e:
+                            print(f"[Photo Message] Error loading image {path}: {e}")
+                            continue
+                    
+                    print(f"[Photo Message] Successfully loaded {len(loaded_images)} images")
+                    return loaded_images
                     
                 except Exception as e:
-                    print(f"[Photo Message] Error selecting photo: {e}")
+                    print(f"[Photo Message] Error getting generated images: {e}")
                     print(traceback.format_exc())
-                    return None
-
-            def send_image_to_tab(image, tab_name):
+                    return []
+            
+            def send_to_api(image):
                 if image is not None:
                     try:
-                        print(f"[Photo Message] Sending image to {tab_name}...")
+                        print("[Photo Message] Sending image to API...")
                         # Convert PIL Image to base64
-                        import base64
-                        from io import BytesIO
-                        buffered = BytesIO()
+                        buffered = io.BytesIO()
                         image.save(buffered, format="PNG")
                         img_str = base64.b64encode(buffered.getvalue()).decode()
-                        return f"data:image/png;base64,{img_str}"
+                        
+                        # Prepare the payload
+                        payload = {
+                            "image": img_str,
+                            "timestamp": datetime.now().isoformat(),
+                            "source": "stable-diffusion-webui"
+                        }
+                        
+                        # Send to API
+                        response = requests.post(
+                            "http://localhost:5001/receive_image",
+                            json=payload,
+                            headers={"Content-Type": "application/json"}
+                        )
+                        
+                        if response.status_code == 200:
+                            return "Image sent successfully"
+                        else:
+                            return f"Error sending image: {response.status_code} - {response.text}"
                     except Exception as e:
-                        print(f"[Photo Message] Error preparing image: {e}")
+                        print(f"[Photo Message] Error sending to API: {e}")
                         print(traceback.format_exc())
+                        return f"Error: {str(e)}"
+                return "No image selected"
+            
+            def on_gallery_select(evt: gr.SelectData, images):
+                if images is not None and evt.index < len(images):
+                    return images[evt.index]
                 return None
-
+            
             # Wire up the events
             refresh_btn.click(fn=update_photo_list, outputs=[photo_list])
             photo_list.select(fn=on_select, inputs=[photo_list], outputs=[preview_image])
+            
+            # Gallery events
+            refresh_generated_btn.click(
+                fn=get_generated_images,
+                outputs=[generated_gallery]
+            )
+            
+            generated_gallery.select(
+                fn=on_gallery_select,
+                inputs=[generated_gallery],
+                outputs=[selected_generated_image]
+            )
+            
+            clear_generated_btn.click(
+                fn=lambda: None,
+                outputs=[generated_gallery]
+            )
+            
+            send_selected_btn.click(
+                fn=send_to_api,
+                inputs=[selected_generated_image],
+                outputs=[status_text]
+            )
             
             # Add click handlers for the buttons with image data
             send_to_img2img.click(
