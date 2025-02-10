@@ -821,6 +821,20 @@ def on_ui_tabs():
                     await new Promise(r => setTimeout(r, 100));  // Wait for tab switch
                     
                     try {
+                        // Find and activate reActor
+                        const scriptDropdown = gradioApp().querySelector('#script_list');
+                        if (scriptDropdown) {
+                            // Find the reActor option
+                            const options = Array.from(scriptDropdown.options);
+                            const reactorOption = options.find(opt => opt.textContent.toLowerCase().includes('reactor'));
+                            if (reactorOption) {
+                                scriptDropdown.value = reactorOption.value;
+                                scriptDropdown.dispatchEvent(new Event('change'));
+                                console.log("[Photo Message] Activated reActor");
+                            }
+                        }
+
+                        // Set the image in img2img
                         const img2imgInput = gradioApp().querySelector('#img2img_image input[type="file"]');
                         if (!img2imgInput) {
                             console.error("[Photo Message] Could not find img2img input");
@@ -837,9 +851,33 @@ def on_ui_tabs():
                         dt.items.add(file);
                         img2imgInput.files = dt.files;
                         img2imgInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+                        // Wait for image to load
+                        await new Promise(r => setTimeout(r, 200));
+
+                        // Set reActor settings
+                        const reactorSettings = gradioApp().querySelector('#script_reactor_div');
+                        if (reactorSettings) {
+                            // Find and click the restore face checkbox
+                            const restoreFaceCheckbox = reactorSettings.querySelector('input[type="checkbox"]');
+                            if (restoreFaceCheckbox && !restoreFaceCheckbox.checked) {
+                                restoreFaceCheckbox.click();
+                            }
+
+                            // Set upscaler to 4x-UltraSharp
+                            const upscalerDropdown = reactorSettings.querySelector('select');
+                            if (upscalerDropdown) {
+                                const ultraSharpOption = Array.from(upscalerDropdown.options)
+                                    .find(opt => opt.textContent.includes('4x-UltraSharp'));
+                                if (ultraSharpOption) {
+                                    upscalerDropdown.value = ultraSharpOption.value;
+                                    upscalerDropdown.dispatchEvent(new Event('change'));
+                                }
+                            }
+                        }
                         
                         console.log("[Photo Message] Image sent successfully");
-                        return "Image sent to img2img";
+                        return "Image sent to img2img with reActor activated";
                     } catch (error) {
                         console.error("[Photo Message] Error:", error);
                         return "Error sending image: " + error.message;
