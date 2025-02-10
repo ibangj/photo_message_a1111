@@ -829,7 +829,38 @@ def on_ui_tabs():
                         }
 
                         // Create file from image data
-                        const res = await fetch(img_data);
+                        let imgData = img_data;
+                        console.log("[Photo Message] Processing image data...");
+                        
+                        // Handle base64 data properly
+                        if (typeof imgData === 'string') {
+                            try {
+                                // If it's a data URL, extract the base64 part
+                                if (imgData.startsWith('data:')) {
+                                    const parts = imgData.split(',');
+                                    if (parts.length === 2) {
+                                        imgData = parts[1];
+                                    }
+                                }
+                                
+                                // Add padding if needed
+                                while (imgData.length % 4 !== 0) {
+                                    imgData += '=';
+                                }
+                                
+                                // Test if we can decode it
+                                atob(imgData);
+                                
+                                // Reconstruct data URL
+                                imgData = 'data:image/jpeg;base64,' + imgData;
+                            } catch (e) {
+                                console.error("[Photo Message] Error processing base64:", e);
+                                return "Error processing image data";
+                            }
+                        }
+                        
+                        // Create file from processed image data
+                        const res = await fetch(imgData);
                         const blob = await res.blob();
                         const file = new File([blob], "image.png", { type: "image/png" });
                         
@@ -844,7 +875,7 @@ def on_ui_tabs():
                             uploadButton.dispatchEvent(new Event('input', { bubbles: true }));
                             
                             // Wait for image to be set
-                            await new Promise(r => setTimeout(r, 500));
+                            await new Promise(r => setTimeout(r, 1000));
                             
                             // Now try to activate reActor
                             const scriptDropdown = gradioApp().querySelector('#script_list');
@@ -866,16 +897,22 @@ def on_ui_tabs():
                                     scriptDropdown.dispatchEvent(new Event('change', { bubbles: true }));
                                     
                                     // Wait for reActor UI to load
-                                    await new Promise(r => setTimeout(r, 500));
+                                    await new Promise(r => setTimeout(r, 1000));
                                     
-                                    // Find and click the reActor checkbox
+                                    // Find and activate the reActor checkbox
                                     const reactorCheckbox = gradioApp().querySelector('#script_list_ReActor');
                                     if (reactorCheckbox) {
-                                        console.log("[Photo Message] Found reActor checkbox, clicking it...");
+                                        console.log("[Photo Message] Found reActor checkbox, activating it...");
+                                        
+                                        // Force the checkbox to be checked
+                                        reactorCheckbox.checked = true;
+                                        reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                                        
+                                        // Also try clicking it to ensure the UI updates
                                         reactorCheckbox.click();
                                         
                                         // Wait for reActor UI to update
-                                        await new Promise(r => setTimeout(r, 500));
+                                        await new Promise(r => setTimeout(r, 1000));
                                         
                                         // Try to set the same image in reActor
                                         const reactorInput = gradioApp().querySelector('#reactor_source input[type="file"]');
@@ -884,6 +921,16 @@ def on_ui_tabs():
                                             reactorInput.files = dt.files;
                                             reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
                                             reactorInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                            
+                                            // Double check that reActor is still activated
+                                            setTimeout(() => {
+                                                if (!reactorCheckbox.checked) {
+                                                    console.log("[Photo Message] ReActor was unchecked, reactivating...");
+                                                    reactorCheckbox.checked = true;
+                                                    reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                                                }
+                                            }, 500);
+                                            
                                             return "Image set and reActor activated";
                                         } else {
                                             console.error("[Photo Message] Could not find reActor input");
