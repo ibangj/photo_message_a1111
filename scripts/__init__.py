@@ -392,6 +392,11 @@ def setup_reactor_with_image(base64_image: str):
     Returns True if successful, False otherwise.
     """
     try:
+        print("[Photo Message] Starting ReActor setup...")
+        print(f"[Photo Message] Input image data type: {type(base64_image)}")
+        if isinstance(base64_image, str):
+            print(f"[Photo Message] Input image data prefix: {base64_image[:50]}...")
+        
         # Find ReActor in loaded scripts
         reactor_script = None
         for script in scripts.scripts_data:
@@ -406,52 +411,81 @@ def setup_reactor_with_image(base64_image: str):
         # Get ReActor's module
         reactor = reactor_script.module
         
-        # Ensure base64_image is properly formatted
+        # Convert image data to PIL Image first
         try:
-            # Remove data URL prefix if present
-            if base64_image.startswith('data:'):
-                base64_image = base64_image.split('base64,')[1]
+            # If it's already a PIL Image
+            if isinstance(base64_image, Image.Image):
+                image = base64_image
+                print("[Photo Message] Using provided PIL Image directly")
+            else:
+                # Handle base64 string
+                if isinstance(base64_image, str):
+                    # Remove data URL prefix if present
+                    if base64_image.startswith('data:'):
+                        base64_image = base64_image.split('base64,')[1]
+                        print("[Photo Message] Removed data URL prefix")
+                    
+                    # Add padding if needed
+                    padding = len(base64_image) % 4
+                    if padding:
+                        base64_image += '=' * (4 - padding)
+                        print("[Photo Message] Added padding to base64 string")
+                    
+                    try:
+                        # Decode base64 to bytes
+                        image_bytes = base64.b64decode(base64_image)
+                        print(f"[Photo Message] Successfully decoded base64 data, size: {len(image_bytes)} bytes")
+                        
+                        # Convert bytes to PIL Image
+                        image = Image.open(io.BytesIO(image_bytes))
+                        print(f"[Photo Message] Successfully created PIL Image: {image.format}, {image.size}, {image.mode}")
+                        
+                        # Convert to RGB if needed
+                        if image.mode != 'RGB':
+                            image = image.convert('RGB')
+                            print("[Photo Message] Converted image to RGB mode")
+                    except Exception as e:
+                        print(f"[Photo Message] Error processing base64 image: {str(e)}")
+                        print(traceback.format_exc())
+                        return False
+                else:
+                    print(f"[Photo Message] Unsupported image type: {type(base64_image)}")
+                    return False
             
-            # Add padding if needed
-            while len(base64_image) % 4:
-                base64_image += '='
-                
-            # Test if we can decode it
-            image_bytes = base64.b64decode(base64_image)
-            # Test if it's a valid image
-            Image.open(io.BytesIO(image_bytes))
+            # Find and update ReActor's components
+            for component in shared.gradio['tabs']:
+                if hasattr(component, 'elem_id') and component.elem_id == "tab_reactor":
+                    print("[Photo Message] Found ReActor tab")
+                    # Enable ReActor tab/checkbox if it exists
+                    if hasattr(component, 'selected'):
+                        component.selected = True
+                        print("[Photo Message] Enabled ReActor tab")
+                    
+                    # Find source image component and update it
+                    for child in component.children:
+                        if isinstance(child, gr.Image) and getattr(child, 'label', '').lower().startswith('source'):
+                            print("[Photo Message] Found ReActor source image component")
+                            try:
+                                # Update with PIL Image
+                                child.update(value=image)
+                                print("[Photo Message] Successfully updated ReActor image")
+                                return True
+                            except Exception as e:
+                                print(f"[Photo Message] Error updating ReActor image: {str(e)}")
+                                print(traceback.format_exc())
+                                return False
             
-            # Reconstruct data URL for Gradio
-            base64_image = f"data:image/jpeg;base64,{base64_image}"
-        except Exception as e:
-            print(f"[Photo Message] Error processing base64 image: {e}")
+            print("[Photo Message] Could not find ReActor's source image component")
             return False
-        
-        # Find and update ReActor's components
-        for component in shared.gradio['tabs']:
-            if hasattr(component, 'elem_id') and component.elem_id == "tab_reactor":
-                # Enable ReActor tab/checkbox if it exists
-                if hasattr(component, 'selected'):
-                    component.selected = True
-                
-                # Find source image component and update it
-                for child in component.children:
-                    if isinstance(child, gr.Image) and getattr(child, 'label', '').lower().startswith('source'):
-                        try:
-                            # Convert base64 to PIL Image for Gradio
-                            image_bytes = base64.b64decode(base64_image.split('base64,')[1])
-                            image = Image.open(io.BytesIO(image_bytes))
-                            child.update(value=image)
-                            return True
-                        except Exception as e:
-                            print(f"[Photo Message] Error updating ReActor image: {e}")
-                            return False
-        
-        print("[Photo Message] Could not find ReActor's source image component")
-        return False
+            
+        except Exception as e:
+            print(f"[Photo Message] Error in image processing: {str(e)}")
+            print(traceback.format_exc())
+            return False
 
     except Exception as e:
-        print(f"[Photo Message] Error setting up ReActor: {e}")
+        print(f"[Photo Message] Error setting up ReActor: {str(e)}")
+        print(traceback.format_exc())
         return False
 
 def send_image_to_tab(image):
@@ -462,26 +496,41 @@ def send_image_to_tab(image):
             return "No image selected"
             
         print("[Photo Message] Image provided for sending")
+        print(f"[Photo Message] Input image type: {type(image)}")
         
-        # Convert image to base64 if needed
-        if isinstance(image, Image.Image):
-            buffered = io.BytesIO()
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            image.save(buffered, format="JPEG", quality=95)
-            image_base64 = base64.b64encode(buffered.getvalue()).decode()
-        elif isinstance(image, str):
-            # If it's already a base64 string
-            if image.startswith('data:'):
-                image_base64 = image.split('base64,')[1]
-            else:
-                image_base64 = image
+        # Convert image to PIL Image if needed
+        if isinstance(image, str):
+            try:
+                # If it's a base64 string
+                if image.startswith('data:'):
+                    image = image.split('base64,')[1]
+                
+                # Add padding if needed
+                padding = len(image) % 4
+                if padding:
+                    image += '=' * (4 - padding)
+                
+                # Convert to PIL Image
+                image_bytes = base64.b64decode(image)
+                pil_image = Image.open(io.BytesIO(image_bytes))
+                if pil_image.mode != 'RGB':
+                    pil_image = pil_image.convert('RGB')
+                print("[Photo Message] Successfully converted base64 to PIL Image")
+            except Exception as e:
+                print(f"[Photo Message] Error converting base64 to image: {str(e)}")
+                print(traceback.format_exc())
+                return f"Error processing image: {str(e)}"
+        elif isinstance(image, Image.Image):
+            pil_image = image
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
+            print("[Photo Message] Using provided PIL Image")
         else:
             print(f"[Photo Message] Unsupported image type: {type(image)}")
             return "Unsupported image type"
-            
-        # Try to setup ReActor with the image
-        if setup_reactor_with_image(image_base64):
+        
+        # Try to setup ReActor with the PIL Image
+        if setup_reactor_with_image(pil_image):
             return "Image set and ReActor activated"
         else:
             return "Could not setup ReActor"
