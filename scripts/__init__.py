@@ -406,6 +406,27 @@ def setup_reactor_with_image(base64_image: str):
         # Get ReActor's module
         reactor = reactor_script.module
         
+        # Ensure base64_image is properly formatted
+        try:
+            # Remove data URL prefix if present
+            if base64_image.startswith('data:'):
+                base64_image = base64_image.split('base64,')[1]
+            
+            # Add padding if needed
+            while len(base64_image) % 4:
+                base64_image += '='
+                
+            # Test if we can decode it
+            image_bytes = base64.b64decode(base64_image)
+            # Test if it's a valid image
+            Image.open(io.BytesIO(image_bytes))
+            
+            # Reconstruct data URL for Gradio
+            base64_image = f"data:image/jpeg;base64,{base64_image}"
+        except Exception as e:
+            print(f"[Photo Message] Error processing base64 image: {e}")
+            return False
+        
         # Find and update ReActor's components
         for component in shared.gradio['tabs']:
             if hasattr(component, 'elem_id') and component.elem_id == "tab_reactor":
@@ -416,8 +437,15 @@ def setup_reactor_with_image(base64_image: str):
                 # Find source image component and update it
                 for child in component.children:
                     if isinstance(child, gr.Image) and getattr(child, 'label', '').lower().startswith('source'):
-                        child.update(value=base64_image)
-                        return True
+                        try:
+                            # Convert base64 to PIL Image for Gradio
+                            image_bytes = base64.b64decode(base64_image.split('base64,')[1])
+                            image = Image.open(io.BytesIO(image_bytes))
+                            child.update(value=image)
+                            return True
+                        except Exception as e:
+                            print(f"[Photo Message] Error updating ReActor image: {e}")
+                            return False
         
         print("[Photo Message] Could not find ReActor's source image component")
         return False
@@ -438,10 +466,19 @@ def send_image_to_tab(image):
         # Convert image to base64 if needed
         if isinstance(image, Image.Image):
             buffered = io.BytesIO()
-            image.save(buffered, format="PNG")
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            image.save(buffered, format="JPEG", quality=95)
             image_base64 = base64.b64encode(buffered.getvalue()).decode()
+        elif isinstance(image, str):
+            # If it's already a base64 string
+            if image.startswith('data:'):
+                image_base64 = image.split('base64,')[1]
+            else:
+                image_base64 = image
         else:
-            image_base64 = image
+            print(f"[Photo Message] Unsupported image type: {type(image)}")
+            return "Unsupported image type"
             
         # Try to setup ReActor with the image
         if setup_reactor_with_image(image_base64):
