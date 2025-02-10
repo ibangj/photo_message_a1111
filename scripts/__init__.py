@@ -213,11 +213,42 @@ photos = []
 
 class PhotoMessage:
     def __init__(self, image_data, name, message, timestamp, is_sent=False):
-        # Remove any existing prefix to ensure clean data
-        if isinstance(image_data, str) and 'base64,' in image_data:
-            self.image_data = image_data.split('base64,')[1]
-        else:
-            self.image_data = image_data
+        print(f"[Photo Message] Creating new PhotoMessage")
+        print(f"[Photo Message] Input image data type: {type(image_data)}")
+        
+        # Handle the image data
+        try:
+            if isinstance(image_data, str):
+                # Remove any existing prefix to ensure clean data
+                if 'base64,' in image_data:
+                    print("[Photo Message] Removing data URL prefix")
+                    self.image_data = image_data.split('base64,')[1]
+                else:
+                    self.image_data = image_data
+                
+                # Add padding if needed
+                padding = len(self.image_data) % 4
+                if padding:
+                    print("[Photo Message] Adding base64 padding")
+                    self.image_data += '=' * (4 - padding)
+                
+                # Validate base64 data
+                try:
+                    print("[Photo Message] Validating base64 data")
+                    image_bytes = base64.b64decode(self.image_data)
+                    test_image = Image.open(io.BytesIO(image_bytes))
+                    test_image.verify()
+                    print("[Photo Message] Successfully validated image data")
+                except Exception as e:
+                    print(f"[Photo Message] Warning: Image validation failed: {e}")
+            else:
+                print(f"[Photo Message] Unsupported image data type: {type(image_data)}")
+                self.image_data = None
+        except Exception as e:
+            print(f"[Photo Message] Error processing image data: {e}")
+            print(traceback.format_exc())
+            self.image_data = None
+            
         self.name = name
         self.message = message
         self.timestamp = timestamp
@@ -318,23 +349,68 @@ def on_app_started(demo: gr.Blocks, app: FastAPI):
         print(traceback.format_exc())
 
 def get_photo_by_timestamp(timestamp):
+    """Get a photo from the photos list by its timestamp"""
     for photo in photos:
         if photo.timestamp == timestamp:
             try:
-                # Handle base64 data without prefix
+                print(f"[Photo Message] Found photo for timestamp: {timestamp}")
+                print(f"[Photo Message] Image data type: {type(photo.image_data)}")
+                print(f"[Photo Message] Image data length: {len(photo.image_data)}")
+                
+                # Get raw base64 data
                 image_data = photo.image_data
-                if not image_data.startswith('data:image/jpeg;base64,'):
-                    image_data = f"data:image/jpeg;base64,{image_data}"
+                
+                # Remove data URL prefix if present
+                if isinstance(image_data, str) and 'base64,' in image_data:
+                    print("[Photo Message] Removing data URL prefix")
+                    image_data = image_data.split('base64,')[1]
+                
+                # Add padding if needed
+                padding = len(image_data) % 4
+                if padding:
+                    print("[Photo Message] Adding base64 padding")
+                    image_data += '=' * (4 - padding)
+                
+                try:
+                    # First try to decode base64
+                    print("[Photo Message] Attempting to decode base64")
+                    image_bytes = base64.b64decode(image_data)
+                    print(f"[Photo Message] Decoded bytes length: {len(image_bytes)}")
                     
-                # Convert base64 to image data
-                image_bytes = base64.b64decode(image_data.split('base64,')[1])
-                # Create a PIL Image from bytes
-                image = Image.open(io.BytesIO(image_bytes))
-                return image
+                    # Try to create PIL Image
+                    print("[Photo Message] Creating PIL Image")
+                    image = Image.open(io.BytesIO(image_bytes))
+                    
+                    # Verify it's a valid image
+                    print("[Photo Message] Verifying image")
+                    image.verify()
+                    
+                    # Reopen for actual use (verify closes the file)
+                    image = Image.open(io.BytesIO(image_bytes))
+                    
+                    # Convert to RGB if needed
+                    if image.mode != 'RGB':
+                        print(f"[Photo Message] Converting from {image.mode} to RGB")
+                        image = image.convert('RGB')
+                    
+                    print("[Photo Message] Successfully loaded image")
+                    return image
+                    
+                except base64.binascii.Error as be:
+                    print(f"[Photo Message] Base64 decode error: {be}")
+                    print(f"[Photo Message] Base64 string preview: {image_data[:100]}...")
+                    return None
+                except PIL.UnidentifiedImageError as pie:
+                    print(f"[Photo Message] PIL error: {pie}")
+                    print(f"[Photo Message] First few bytes: {image_bytes[:20].hex()}")
+                    return None
+                    
             except Exception as e:
-                print(f"Error decoding image: {e}")
+                print(f"[Photo Message] Error processing image: {e}")
                 print(traceback.format_exc())
                 return None
+    
+    print(f"[Photo Message] No photo found for timestamp: {timestamp}")
     return None
 
 def update_photo_list():
