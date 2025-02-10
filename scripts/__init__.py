@@ -575,7 +575,8 @@ def setup_reactor_with_image(image_data):
                         class_name = script.script_class.__name__.lower()
                         print(f"[Photo Message] Checking script - Module: {module_name}, Class: {class_name}")
                         
-                        if 'reactor' in module_name or 'reactor' in class_name:
+                        # Look for reactor_faceswap in the module name
+                        if 'reactor_faceswap' in module_name:
                             reactor_script = script
                             print(f"[Photo Message] Found ReActor script: {script.script_class.__module__}.{script.script_class.__name__}")
                             break
@@ -611,6 +612,7 @@ def setup_reactor_with_image(image_data):
                 return False
 
             # Search for ReActor components in img2img tab
+            print("[Photo Message] Searching for ReActor components in img2img tab...")
             for component in img2img_tab.children:
                 if hasattr(component, 'elem_id'):
                     elem_id = str(component.elem_id)
