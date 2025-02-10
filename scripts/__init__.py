@@ -16,6 +16,7 @@ import numpy as np
 import requests
 import time
 import socketio
+import tempfile
 
 print("\n[Photo Message] ====== Extension Loading ======")
 print(f"[Photo Message] Current directory: {os.path.dirname(os.path.abspath(__file__))}")
@@ -394,24 +395,8 @@ def setup_reactor_with_image(base64_image: str):
     try:
         print("[Photo Message] Starting ReActor setup...")
         print(f"[Photo Message] Input image data type: {type(base64_image)}")
-        if isinstance(base64_image, str):
-            print(f"[Photo Message] Input image data prefix: {base64_image[:50]}...")
         
-        # Find ReActor in loaded scripts
-        reactor_script = None
-        for script in scripts.scripts_data:
-            if script.script_class.__module__ == "scripts.reactor_faceswap":
-                reactor_script = script
-                break
-        
-        if not reactor_script or not hasattr(reactor_script, "module"):
-            print("[Photo Message] ReActor extension not found")
-            return False
-
-        # Get ReActor's module
-        reactor = reactor_script.module
-        
-        # Convert image data to PIL Image first
+        # Convert to PIL Image first
         try:
             # If it's already a PIL Image
             if isinstance(base64_image, Image.Image):
@@ -452,6 +437,20 @@ def setup_reactor_with_image(base64_image: str):
                     print(f"[Photo Message] Unsupported image type: {type(base64_image)}")
                     return False
             
+            # Find ReActor in loaded scripts
+            reactor_script = None
+            for script in scripts.scripts_data:
+                if script.script_class.__module__ == "scripts.reactor_faceswap":
+                    reactor_script = script
+                    break
+            
+            if not reactor_script or not hasattr(reactor_script, "module"):
+                print("[Photo Message] ReActor extension not found")
+                return False
+
+            # Get ReActor's module
+            reactor = reactor_script.module
+            
             # Find and update ReActor's components
             for component in shared.gradio['tabs']:
                 if hasattr(component, 'elem_id') and component.elem_id == "tab_reactor":
@@ -466,8 +465,13 @@ def setup_reactor_with_image(base64_image: str):
                         if isinstance(child, gr.Image) and getattr(child, 'label', '').lower().startswith('source'):
                             print("[Photo Message] Found ReActor source image component")
                             try:
-                                # Update with PIL Image
-                                child.update(value=image)
+                                # Save image to temporary file
+                                temp_path = os.path.join(tempfile.gettempdir(), f"reactor_temp_{int(time.time())}.png")
+                                image.save(temp_path, format="PNG")
+                                print(f"[Photo Message] Saved temporary image to: {temp_path}")
+                                
+                                # Update with file path instead of direct image
+                                child.update(value=temp_path)
                                 print("[Photo Message] Successfully updated ReActor image")
                                 return True
                             except Exception as e:
@@ -529,8 +533,13 @@ def send_image_to_tab(image):
             print(f"[Photo Message] Unsupported image type: {type(image)}")
             return "Unsupported image type"
         
-        # Try to setup ReActor with the PIL Image
-        if setup_reactor_with_image(pil_image):
+        # Save to temporary file
+        temp_path = os.path.join(tempfile.gettempdir(), f"img2img_temp_{int(time.time())}.png")
+        pil_image.save(temp_path, format="PNG")
+        print(f"[Photo Message] Saved temporary image to: {temp_path}")
+        
+        # Try to setup ReActor with the file path
+        if setup_reactor_with_image(temp_path):
             return "Image set and ReActor activated"
         else:
             return "Could not setup ReActor"
