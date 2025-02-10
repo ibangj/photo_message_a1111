@@ -1174,8 +1174,9 @@ def on_ui_tabs():
                                 // Test if we can decode it
                                 atob(imgData);
                                 
-                                // Reconstruct data URL
+                                // Reconstruct data URL with proper MIME type
                                 imgData = 'data:image/jpeg;base64,' + imgData;
+                                console.log("[Photo Message] Base64 data processed successfully");
                             } catch (e) {
                                 console.error("[Photo Message] Error processing base64:", e);
                                 return "Error processing image data";
@@ -1185,7 +1186,7 @@ def on_ui_tabs():
                         // Create file from processed image data
                         const res = await fetch(imgData);
                         const blob = await res.blob();
-                        const file = new File([blob], "image.png", { type: "image/png" });
+                        const file = new File([blob], "image.jpg", { type: "image/jpeg" });
                         
                         // Set the file in img2img
                         const uploadButton = img2imgImage.querySelector('input[type="file"]');
