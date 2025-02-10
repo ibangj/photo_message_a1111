@@ -899,46 +899,60 @@ def on_ui_tabs():
                                     // Wait for reActor UI to load
                                     await new Promise(r => setTimeout(r, 1000));
                                     
-                                    // Find and activate the reActor checkbox
-                                    const reactorCheckbox = gradioApp().querySelector('#script_list_ReActor');
-                                    if (reactorCheckbox) {
-                                        console.log("[Photo Message] Found reActor checkbox, activating it...");
+                                    // Find the reActor accordion and expand it
+                                    const accordionButton = gradioApp().querySelector('#script_list_ReActor_collapse');
+                                    if (accordionButton) {
+                                        console.log("[Photo Message] Found reActor accordion, expanding it...");
                                         
-                                        // Force the checkbox to be checked
-                                        reactorCheckbox.checked = true;
-                                        reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                                        // Click the accordion button to expand
+                                        accordionButton.click();
                                         
-                                        // Also try clicking it to ensure the UI updates
-                                        reactorCheckbox.click();
-                                        
-                                        // Wait for reActor UI to update
+                                        // Wait for accordion animation
                                         await new Promise(r => setTimeout(r, 1000));
                                         
-                                        // Try to set the same image in reActor
-                                        const reactorInput = gradioApp().querySelector('#reactor_source input[type="file"]');
-                                        if (reactorInput) {
-                                            console.log("[Photo Message] Setting image in reActor...");
-                                            reactorInput.files = dt.files;
-                                            reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
-                                            reactorInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                        // Now explicitly check the checkbox
+                                        const reactorCheckbox = gradioApp().querySelector('#script_list_ReActor');
+                                        if (reactorCheckbox) {
+                                            console.log("[Photo Message] Found reActor checkbox, checking it...");
                                             
-                                            // Double check that reActor is still activated
-                                            setTimeout(() => {
-                                                if (!reactorCheckbox.checked) {
-                                                    console.log("[Photo Message] ReActor was unchecked, reactivating...");
-                                                    reactorCheckbox.checked = true;
-                                                    reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                                            // Force the checkbox to be checked
+                                            reactorCheckbox.checked = true;
+                                            reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                                            
+                                            // Wait for checkbox state to update
+                                            await new Promise(r => setTimeout(r, 500));
+                                            
+                                            // Try to set the image in reActor
+                                            const reactorInput = gradioApp().querySelector('#reactor_source input[type="file"]');
+                                            if (reactorInput) {
+                                                console.log("[Photo Message] Setting image in reActor...");
+                                                reactorInput.files = dt.files;
+                                                reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
+                                                reactorInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                                
+                                                // Wait a bit and verify the image was set
+                                                await new Promise(r => setTimeout(r, 500));
+                                                
+                                                // Check if we need to trigger the input again
+                                                const reactorPreview = gradioApp().querySelector('#reactor_source img');
+                                                if (!reactorPreview || !reactorPreview.src) {
+                                                    console.log("[Photo Message] Retrying image set in reActor...");
+                                                    reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
+                                                    reactorInput.dispatchEvent(new Event('input', { bubbles: true }));
                                                 }
-                                            }, 500);
-                                            
-                                            return "Image set and reActor activated";
+                                                
+                                                return "Image set and reActor activated";
+                                            } else {
+                                                console.error("[Photo Message] Could not find reActor input");
+                                                return "ReActor activated but could not find input";
+                                            }
                                         } else {
-                                            console.error("[Photo Message] Could not find reActor input");
-                                            return "Image set but could not find reActor input";
+                                            console.error("[Photo Message] Could not find reActor checkbox");
+                                            return "Could not find reActor checkbox";
                                         }
                                     } else {
-                                        console.error("[Photo Message] Could not find reActor checkbox");
-                                        return "Image set but could not find reActor checkbox";
+                                        console.error("[Photo Message] Could not find reActor accordion");
+                                        return "Could not find reActor accordion";
                                     }
                                 } else {
                                     console.error("[Photo Message] Could not find reActor in scripts");
