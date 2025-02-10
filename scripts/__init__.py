@@ -396,44 +396,49 @@ def setup_reactor_with_image(image_data):
         print("[Photo Message] Starting ReActor setup...")
         print(f"[Photo Message] Input image data type: {type(image_data)}")
 
-        # Convert to PIL Image first
+        # Get base64 string from input
         try:
-            # If it's already a PIL Image
             if isinstance(image_data, Image.Image):
-                image = image_data
-                print("[Photo Message] Using provided PIL Image directly")
+                # Convert PIL Image to base64
+                buffered = io.BytesIO()
+                if image_data.mode != 'RGB':
+                    image_data = image_data.convert('RGB')
+                image_data.save(buffered, format="JPEG", quality=95)
+                base64_str = base64.b64encode(buffered.getvalue()).decode()
+                print("[Photo Message] Converted PIL Image to base64")
             elif isinstance(image_data, str):
-                # If it's a file path
                 if os.path.isfile(image_data):
-                    image = Image.open(image_data)
-                    print("[Photo Message] Loaded image from file path")
+                    # Load file and convert to base64
+                    with open(image_data, 'rb') as img_file:
+                        base64_str = base64.b64encode(img_file.read()).decode()
+                    print("[Photo Message] Loaded image from file and converted to base64")
                 else:
-                    # Handle base64 string
-                    try:
-                        # Remove data URL prefix if present
-                        if image_data.startswith('data:'):
-                            image_data = image_data.split('base64,')[1]
-                        
-                        # Add padding if needed
-                        padding = len(image_data) % 4
-                        if padding:
-                            image_data += '=' * (4 - padding)
-                        
-                        # Decode base64 to bytes
-                        image_bytes = base64.b64decode(image_data)
-                        image = Image.open(io.BytesIO(image_bytes))
-                        print("[Photo Message] Created PIL Image from base64")
-                    except Exception as e:
-                        print(f"[Photo Message] Error processing base64: {str(e)}")
-                        return False
+                    # Handle base64 string - remove prefix if present
+                    base64_str = image_data
+                    if 'base64,' in base64_str:
+                        base64_str = base64_str.split('base64,')[1]
+                    print("[Photo Message] Using provided base64 string")
             else:
                 print(f"[Photo Message] Unsupported image type: {type(image_data)}")
                 return False
 
-            # Ensure image is in RGB mode
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
+            # Add padding if needed
+            padding = len(base64_str) % 4
+            if padding:
+                base64_str += '=' * (4 - padding)
+
+            # Validate base64 string
+            try:
+                # Test decode
+                image_bytes = base64.b64decode(base64_str)
+                # Test if it's a valid image
+                test_image = Image.open(io.BytesIO(image_bytes))
+                test_image.verify()
+                print("[Photo Message] Validated base64 image data")
+            except Exception as e:
+                print(f"[Photo Message] Invalid base64 image data: {str(e)}")
+                return False
+
             # Find ReActor in loaded scripts
             reactor_script = None
             for script in scripts.scripts_data:
@@ -444,15 +449,6 @@ def setup_reactor_with_image(image_data):
             if not reactor_script:
                 print("[Photo Message] ReActor extension not found")
                 return False
-
-            # Save to temporary file with unique name
-            temp_dir = os.path.join(tempfile.gettempdir(), "photo_message")
-            os.makedirs(temp_dir, exist_ok=True)
-            temp_path = os.path.join(temp_dir, f"reactor_source_{int(time.time())}.png")
-            
-            # Save with maximum compatibility
-            image.save(temp_path, format="PNG", optimize=True)
-            print(f"[Photo Message] Saved temporary image to: {temp_path}")
 
             # Find and update ReActor's components
             reactor_found = False
@@ -481,8 +477,9 @@ def setup_reactor_with_image(image_data):
                             if isinstance(child, gr.Image) and hasattr(child, 'elem_id') and 'reactor_source' in str(child.elem_id):
                                 print("[Photo Message] Found ReActor source image component")
                                 try:
-                                    # Update using file path
-                                    child.update(value=temp_path)
+                                    # Add data URL prefix for Gradio
+                                    img_data = f'data:image/jpeg;base64,{base64_str}'
+                                    child.update(value=img_data)
                                     print("[Photo Message] Successfully updated ReActor image")
                                     return True
                                 except Exception as e:
