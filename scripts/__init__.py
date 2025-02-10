@@ -386,6 +386,46 @@ def on_select(evt: gr.SelectData, current_value):
         print(traceback.format_exc())
         return None
 
+def setup_reactor_with_image(base64_image: str):
+    """
+    Find ReActor extension, enable it, and set a base64 source image.
+    Returns True if successful, False otherwise.
+    """
+    try:
+        # Find ReActor in loaded scripts
+        reactor_script = None
+        for script in scripts.scripts_data:
+            if script.script_class.__module__ == "scripts.reactor_faceswap":
+                reactor_script = script
+                break
+        
+        if not reactor_script or not hasattr(reactor_script, "module"):
+            print("[Photo Message] ReActor extension not found")
+            return False
+
+        # Get ReActor's module
+        reactor = reactor_script.module
+        
+        # Find and update ReActor's components
+        for component in shared.gradio['tabs']:
+            if hasattr(component, 'elem_id') and component.elem_id == "tab_reactor":
+                # Enable ReActor tab/checkbox if it exists
+                if hasattr(component, 'selected'):
+                    component.selected = True
+                
+                # Find source image component and update it
+                for child in component.children:
+                    if isinstance(child, gr.Image) and getattr(child, 'label', '').lower().startswith('source'):
+                        child.update(value=base64_image)
+                        return True
+        
+        print("[Photo Message] Could not find ReActor's source image component")
+        return False
+
+    except Exception as e:
+        print(f"[Photo Message] Error setting up ReActor: {e}")
+        return False
+
 def send_image_to_tab(image):
     """Handle sending an image to another tab"""
     try:
@@ -394,7 +434,20 @@ def send_image_to_tab(image):
             return "No image selected"
             
         print("[Photo Message] Image provided for sending")
-        return "Image ready to send"
+        
+        # Convert image to base64 if needed
+        if isinstance(image, Image.Image):
+            buffered = io.BytesIO()
+            image.save(buffered, format="PNG")
+            image_base64 = base64.b64encode(buffered.getvalue()).decode()
+        else:
+            image_base64 = image
+            
+        # Try to setup ReActor with the image
+        if setup_reactor_with_image(image_base64):
+            return "Image set and ReActor activated"
+        else:
+            return "Could not setup ReActor"
             
     except Exception as e:
         error_msg = f"Error preparing image: {str(e)}"
@@ -818,7 +871,7 @@ def on_ui_tabs():
                     const tabs = gradioApp().querySelector('#tabs');
                     if (tabs) tabs.querySelectorAll('button')[1].click();
                     
-                    await new Promise(r => setTimeout(r, 100));  // Wait for tab switch
+                    await new Promise(r => setTimeout(r, 500));  // Wait for tab switch
                     
                     try {
                         // First set the image in img2img (using the working code)
@@ -875,50 +928,10 @@ def on_ui_tabs():
                             uploadButton.dispatchEvent(new Event('input', { bubbles: true }));
                             
                             // Wait for image to be set
-                            await new Promise(r => setTimeout(r, 1000));
+                            await new Promise(r => setTimeout(r, 500));
                             
-                            // Now try to activate ReActor extension
-                            console.log("[Photo Message] Looking for ReActor checkbox...");
-                            const reactorCheckbox = gradioApp().querySelector('input[type="checkbox"][id*="ReActor"]');
-                            
-                            if (reactorCheckbox) {
-                                console.log("[Photo Message] Found ReActor checkbox, checking it...");
-                                
-                                // Force the checkbox to be checked
-                                reactorCheckbox.checked = true;
-                                reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
-                                
-                                // Wait for checkbox state to update
-                                await new Promise(r => setTimeout(r, 1000));
-                                
-                                // Try to set the image in ReActor
-                                const reactorInput = gradioApp().querySelector('#reactor_source input[type="file"]');
-                                if (reactorInput) {
-                                    console.log("[Photo Message] Setting image in ReActor...");
-                                    reactorInput.files = dt.files;
-                                    reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
-                                    reactorInput.dispatchEvent(new Event('input', { bubbles: true }));
-                                    
-                                    // Wait a bit and verify the image was set
-                                    await new Promise(r => setTimeout(r, 1000));
-                                    
-                                    // Check if we need to trigger the input again
-                                    const reactorPreview = gradioApp().querySelector('#reactor_source img');
-                                    if (!reactorPreview || !reactorPreview.src) {
-                                        console.log("[Photo Message] Retrying image set in ReActor...");
-                                        reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
-                                        reactorInput.dispatchEvent(new Event('input', { bubbles: true }));
-                                    }
-                                    
-                                    return "Image set and ReActor activated";
-                                } else {
-                                    console.error("[Photo Message] Could not find ReActor input");
-                                    return "ReActor activated but could not find input";
-                                }
-                            } else {
-                                console.error("[Photo Message] Could not find ReActor checkbox");
-                                return "Could not find ReActor checkbox";
-                            }
+                            // Let the Python code handle ReActor setup
+                            return "Image set successfully";
                         } else {
                             console.error("[Photo Message] Could not find upload button");
                             return "Could not find upload button";
