@@ -602,31 +602,39 @@ def setup_reactor_with_image(image_data):
             # Get all components from the ReActor script
             print("[Photo Message] Searching for ReActor components...")
             try:
-                # Get the script's UI elements
+                # Get the script's UI elements by calling the ui function
                 if hasattr(reactor_script, 'script_class') and hasattr(reactor_script.script_class, 'ui'):
-                    ui_elements = reactor_script.script_class.ui
-                    print(f"[Photo Message] Found UI elements: {ui_elements}")
-                    
-                    # Look for the checkbox and source image components
-                    for elem in ui_elements:
-                        try:
-                            elem_id = str(getattr(elem, 'elem_id', ''))
-                            print(f"[Photo Message] Checking element: {elem_id}")
-                            
-                            if 'reactor_enabled' in elem_id.lower():
-                                reactor_checkbox = elem
-                                print(f"[Photo Message] Found ReActor checkbox: {elem_id}")
-                                reactor_found = True
-                            elif 'reactor_source' in elem_id.lower() and isinstance(elem, gr.Image):
-                                reactor_source = elem
-                                print(f"[Photo Message] Found ReActor source image: {elem_id}")
-                        except Exception as e:
-                            print(f"[Photo Message] Error checking element: {e}")
-                            continue
+                    print("[Photo Message] Getting UI elements...")
+                    # Create an instance of the script class
+                    script_instance = reactor_script.script_class()
+                    # Call the ui function to get the elements
+                    ui_elements = script_instance.ui()
+                    if isinstance(ui_elements, (list, tuple)):
+                        print(f"[Photo Message] Found {len(ui_elements)} UI elements")
+                        
+                        # Look for the checkbox and source image components
+                        for elem in ui_elements:
+                            try:
+                                elem_id = str(getattr(elem, 'elem_id', ''))
+                                print(f"[Photo Message] Checking element: {elem_id}")
+                                
+                                if 'reactor_enabled' in elem_id.lower():
+                                    reactor_checkbox = elem
+                                    print(f"[Photo Message] Found ReActor checkbox: {elem_id}")
+                                    reactor_found = True
+                                elif 'reactor_source' in elem_id.lower() and isinstance(elem, gr.Image):
+                                    reactor_source = elem
+                                    print(f"[Photo Message] Found ReActor source image: {elem_id}")
+                            except Exception as e:
+                                print(f"[Photo Message] Error checking element: {e}")
+                                continue
+                    else:
+                        print(f"[Photo Message] UI elements not in expected format: {type(ui_elements)}")
                 else:
-                    print("[Photo Message] Script has no UI elements")
+                    print("[Photo Message] Script has no UI function")
             except Exception as e:
                 print(f"[Photo Message] Error accessing script UI: {e}")
+                print(traceback.format_exc())
 
             if not reactor_found:
                 print("[Photo Message] Could not find ReActor's components")
