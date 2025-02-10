@@ -821,52 +821,67 @@ def on_ui_tabs():
                     await new Promise(r => setTimeout(r, 100));  // Wait for tab switch
                     
                     try {
-                        // Find and activate reActor
-                        const scriptDropdown = gradioApp().querySelector('#script_list');
-                        if (scriptDropdown) {
-                            // Find the reActor option
-                            const options = Array.from(scriptDropdown.options);
-                            const reactorOption = options.find(opt => opt.textContent.toLowerCase().includes('reactor'));
-                            
-                            if (reactorOption) {
-                                console.log("[Photo Message] Found reActor script, activating...");
-                                scriptDropdown.value = reactorOption.value;
-                                scriptDropdown.dispatchEvent(new Event('change'));
-                                await new Promise(r => setTimeout(r, 100));  // Wait for script to load
-                            }
-                        }
-
-                        // Set the image in img2img
-                        const img2imgInput = gradioApp().querySelector('#img2img_image input[type="file"]');
-                        if (!img2imgInput) {
-                            console.error("[Photo Message] Could not find img2img input");
+                        // First set the image in img2img (using the working code)
+                        const img2imgImage = gradioApp().querySelector('#img2img_image');
+                        if (!img2imgImage) {
+                            console.error("[Photo Message] Could not find img2img_image element");
                             return "Could not find img2img input";
                         }
-                        
+
                         // Create file from image data
                         const res = await fetch(img_data);
                         const blob = await res.blob();
                         const file = new File([blob], "image.png", { type: "image/png" });
                         
-                        // Set the file
-                        const dt = new DataTransfer();
-                        dt.items.add(file);
-                        img2imgInput.files = dt.files;
-                        img2imgInput.dispatchEvent(new Event('change', { bubbles: true }));
-
-                        // Also set the same image for reActor if the input exists
-                        const reactorInput = gradioApp().querySelector('#reactor_source input[type="file"]');
-                        if (reactorInput) {
-                            console.log("[Photo Message] Setting image in reActor input...");
-                            reactorInput.files = dt.files;
-                            reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
+                        // Set the file in img2img
+                        const uploadButton = img2imgImage.querySelector('input[type="file"]');
+                        if (uploadButton) {
+                            console.log("[Photo Message] Setting image in img2img...");
+                            const dt = new DataTransfer();
+                            dt.items.add(file);
+                            uploadButton.files = dt.files;
+                            uploadButton.dispatchEvent(new Event('change', { bubbles: true }));
+                            uploadButton.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Wait for image to be set
+                            await new Promise(r => setTimeout(r, 300));
+                            
+                            // Now try to activate reActor
+                            const scriptDropdown = gradioApp().querySelector('#script_list');
+                            if (scriptDropdown) {
+                                const options = Array.from(scriptDropdown.querySelectorAll('option'));
+                                const reactorOption = options.find(opt => 
+                                    opt.textContent.toLowerCase().includes('reactor') || 
+                                    opt.value.toLowerCase().includes('reactor')
+                                );
+                                
+                                if (reactorOption) {
+                                    console.log("[Photo Message] Activating reActor...");
+                                    scriptDropdown.value = reactorOption.value;
+                                    scriptDropdown.dispatchEvent(new Event('change', { bubbles: true }));
+                                    
+                                    // Wait for reActor UI to load
+                                    await new Promise(r => setTimeout(r, 300));
+                                    
+                                    // Try to set the same image in reActor
+                                    const reactorInput = gradioApp().querySelector('#reactor_source input[type="file"]');
+                                    if (reactorInput) {
+                                        console.log("[Photo Message] Setting image in reActor...");
+                                        reactorInput.files = dt.files;
+                                        reactorInput.dispatchEvent(new Event('change', { bubbles: true }));
+                                        return "Image set and reActor activated";
+                                    }
+                                }
+                            }
+                            
+                            return "Image set successfully (reActor not found)";
+                        } else {
+                            console.error("[Photo Message] Could not find upload button");
+                            return "Could not find upload button";
                         }
-                        
-                        console.log("[Photo Message] Image sent successfully");
-                        return "Image sent to img2img and reActor activated";
                     } catch (error) {
                         console.error("[Photo Message] Error:", error);
-                        return "Error sending image: " + error.message;
+                        return "Error: " + error.message;
                     }
                 }
                 """
