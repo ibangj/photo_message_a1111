@@ -387,55 +387,52 @@ def on_select(evt: gr.SelectData, current_value):
         print(traceback.format_exc())
         return None
 
-def setup_reactor_with_image(base64_image: str):
+def setup_reactor_with_image(image_data):
     """
     Find ReActor extension, enable it, and set a base64 source image.
     Returns True if successful, False otherwise.
     """
     try:
         print("[Photo Message] Starting ReActor setup...")
-        print(f"[Photo Message] Input image data type: {type(base64_image)}")
-        
+        print(f"[Photo Message] Input image data type: {type(image_data)}")
+
         # Convert to PIL Image first
         try:
             # If it's already a PIL Image
-            if isinstance(base64_image, Image.Image):
-                image = base64_image
+            if isinstance(image_data, Image.Image):
+                image = image_data
                 print("[Photo Message] Using provided PIL Image directly")
-            else:
-                # Handle base64 string
-                if isinstance(base64_image, str):
-                    # Remove data URL prefix if present
-                    if base64_image.startswith('data:'):
-                        base64_image = base64_image.split('base64,')[1]
-                        print("[Photo Message] Removed data URL prefix")
-                    
-                    # Add padding if needed
-                    padding = len(base64_image) % 4
-                    if padding:
-                        base64_image += '=' * (4 - padding)
-                        print("[Photo Message] Added padding to base64 string")
-                    
-                    try:
-                        # Decode base64 to bytes
-                        image_bytes = base64.b64decode(base64_image)
-                        print(f"[Photo Message] Successfully decoded base64 data, size: {len(image_bytes)} bytes")
-                        
-                        # Convert bytes to PIL Image
-                        image = Image.open(io.BytesIO(image_bytes))
-                        print(f"[Photo Message] Successfully created PIL Image: {image.format}, {image.size}, {image.mode}")
-                        
-                        # Convert to RGB if needed
-                        if image.mode != 'RGB':
-                            image = image.convert('RGB')
-                            print("[Photo Message] Converted image to RGB mode")
-                    except Exception as e:
-                        print(f"[Photo Message] Error processing base64 image: {str(e)}")
-                        print(traceback.format_exc())
-                        return False
+            elif isinstance(image_data, str):
+                # If it's a file path
+                if os.path.isfile(image_data):
+                    image = Image.open(image_data)
+                    print("[Photo Message] Loaded image from file path")
                 else:
-                    print(f"[Photo Message] Unsupported image type: {type(base64_image)}")
-                    return False
+                    # Handle base64 string
+                    try:
+                        # Remove data URL prefix if present
+                        if image_data.startswith('data:'):
+                            image_data = image_data.split('base64,')[1]
+                        
+                        # Add padding if needed
+                        padding = len(image_data) % 4
+                        if padding:
+                            image_data += '=' * (4 - padding)
+                        
+                        # Decode base64 to bytes
+                        image_bytes = base64.b64decode(image_data)
+                        image = Image.open(io.BytesIO(image_bytes))
+                        print("[Photo Message] Created PIL Image from base64")
+                    except Exception as e:
+                        print(f"[Photo Message] Error processing base64: {str(e)}")
+                        return False
+            else:
+                print(f"[Photo Message] Unsupported image type: {type(image_data)}")
+                return False
+
+            # Ensure image is in RGB mode
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
             
             # Find ReActor in loaded scripts
             reactor_script = None
@@ -444,51 +441,66 @@ def setup_reactor_with_image(base64_image: str):
                     reactor_script = script
                     break
             
-            if not reactor_script or not hasattr(reactor_script, "module"):
+            if not reactor_script:
                 print("[Photo Message] ReActor extension not found")
                 return False
 
-            # Get ReActor's module
-            reactor = reactor_script.module
+            # Save to temporary file with unique name
+            temp_dir = os.path.join(tempfile.gettempdir(), "photo_message")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_path = os.path.join(temp_dir, f"reactor_source_{int(time.time())}.png")
             
+            # Save with maximum compatibility
+            image.save(temp_path, format="PNG", optimize=True)
+            print(f"[Photo Message] Saved temporary image to: {temp_path}")
+
             # Find and update ReActor's components
+            reactor_found = False
             for component in shared.gradio['tabs']:
-                if hasattr(component, 'elem_id') and component.elem_id == "tab_reactor":
-                    print("[Photo Message] Found ReActor tab")
-                    # Enable ReActor tab/checkbox if it exists
-                    if hasattr(component, 'selected'):
-                        component.selected = True
-                        print("[Photo Message] Enabled ReActor tab")
+                if hasattr(component, 'elem_id') and component.elem_id == "tab_img2img":
+                    print("[Photo Message] Found img2img tab")
                     
-                    # Find source image component and update it
+                    # Find ReActor checkbox
                     for child in component.children:
-                        if isinstance(child, gr.Image) and getattr(child, 'label', '').lower().startswith('source'):
-                            print("[Photo Message] Found ReActor source image component")
+                        if hasattr(child, 'elem_id') and 'ReActor' in str(child.elem_id):
+                            print(f"[Photo Message] Found ReActor component: {child.elem_id}")
                             try:
-                                # Save image to temporary file
-                                temp_path = os.path.join(tempfile.gettempdir(), f"reactor_temp_{int(time.time())}.png")
-                                image.save(temp_path, format="PNG")
-                                print(f"[Photo Message] Saved temporary image to: {temp_path}")
-                                
-                                # Update with file path instead of direct image
-                                child.update(value=temp_path)
-                                print("[Photo Message] Successfully updated ReActor image")
-                                return True
+                                # Enable ReActor
+                                if hasattr(child, 'value'):
+                                    child.value = True
+                                    print("[Photo Message] Enabled ReActor checkbox")
+                                    reactor_found = True
+                                    break
                             except Exception as e:
-                                print(f"[Photo Message] Error updating ReActor image: {str(e)}")
+                                print(f"[Photo Message] Error enabling ReActor: {str(e)}")
                                 print(traceback.format_exc())
-                                return False
+                    
+                    if reactor_found:
+                        # Find source image component
+                        for child in component.children:
+                            if isinstance(child, gr.Image) and hasattr(child, 'elem_id') and 'reactor_source' in str(child.elem_id):
+                                print("[Photo Message] Found ReActor source image component")
+                                try:
+                                    # Update using file path
+                                    child.update(value=temp_path)
+                                    print("[Photo Message] Successfully updated ReActor image")
+                                    return True
+                                except Exception as e:
+                                    print(f"[Photo Message] Error updating ReActor: {str(e)}")
+                                    print(traceback.format_exc())
+                                    return False
             
-            print("[Photo Message] Could not find ReActor's source image component")
-            return False
-            
+            if not reactor_found:
+                print("[Photo Message] Could not find ReActor's components")
+                return False
+
         except Exception as e:
             print(f"[Photo Message] Error in image processing: {str(e)}")
             print(traceback.format_exc())
             return False
 
     except Exception as e:
-        print(f"[Photo Message] Error setting up ReActor: {str(e)}")
+        print(f"[Photo Message] Error in ReActor setup: {str(e)}")
         print(traceback.format_exc())
         return False
 
@@ -496,56 +508,62 @@ def send_image_to_tab(image):
     """Handle sending an image to another tab"""
     try:
         if image is None:
-            print("[Photo Message] No image provided to send")
+            print("[Photo Message] No image provided")
             return "No image selected"
-            
-        print("[Photo Message] Image provided for sending")
-        print(f"[Photo Message] Input image type: {type(image)}")
-        
-        # Convert image to PIL Image if needed
-        if isinstance(image, str):
-            try:
-                # If it's a base64 string
-                if image.startswith('data:'):
-                    image = image.split('base64,')[1]
-                
-                # Add padding if needed
-                padding = len(image) % 4
-                if padding:
-                    image += '=' * (4 - padding)
-                
-                # Convert to PIL Image
-                image_bytes = base64.b64decode(image)
-                pil_image = Image.open(io.BytesIO(image_bytes))
-                if pil_image.mode != 'RGB':
-                    pil_image = pil_image.convert('RGB')
-                print("[Photo Message] Successfully converted base64 to PIL Image")
-            except Exception as e:
-                print(f"[Photo Message] Error converting base64 to image: {str(e)}")
-                print(traceback.format_exc())
-                return f"Error processing image: {str(e)}"
-        elif isinstance(image, Image.Image):
-            pil_image = image
+
+        print("[Photo Message] Processing image...")
+        print(f"[Photo Message] Input type: {type(image)}")
+
+        # Convert to PIL Image if needed
+        try:
+            if isinstance(image, str):
+                # If it's a file path
+                if os.path.isfile(image):
+                    pil_image = Image.open(image)
+                else:
+                    # Handle base64 string
+                    if image.startswith('data:'):
+                        image = image.split('base64,')[1]
+                    # Add padding if needed
+                    padding = len(image) % 4
+                    if padding:
+                        image += '=' * (4 - padding)
+                    # Convert to PIL Image
+                    image_bytes = base64.b64decode(image)
+                    pil_image = Image.open(io.BytesIO(image_bytes))
+            elif isinstance(image, Image.Image):
+                pil_image = image
+            else:
+                print(f"[Photo Message] Unsupported image type: {type(image)}")
+                return "Unsupported image type"
+
+            # Ensure RGB mode
             if pil_image.mode != 'RGB':
                 pil_image = pil_image.convert('RGB')
-            print("[Photo Message] Using provided PIL Image")
-        else:
-            print(f"[Photo Message] Unsupported image type: {type(image)}")
-            return "Unsupported image type"
-        
-        # Save to temporary file
-        temp_path = os.path.join(tempfile.gettempdir(), f"img2img_temp_{int(time.time())}.png")
-        pil_image.save(temp_path, format="PNG")
-        print(f"[Photo Message] Saved temporary image to: {temp_path}")
-        
-        # Try to setup ReActor with the file path
-        if setup_reactor_with_image(temp_path):
-            return "Image set and ReActor activated"
-        else:
-            return "Could not setup ReActor"
+
+            # Save to temporary file
+            temp_dir = os.path.join(tempfile.gettempdir(), "photo_message")
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_path = os.path.join(temp_dir, f"img2img_source_{int(time.time())}.png")
             
+            # Save with maximum compatibility
+            pil_image.save(temp_path, format="PNG", optimize=True)
+            print(f"[Photo Message] Saved to temp file: {temp_path}")
+
+            # Try to setup ReActor with the file path
+            if setup_reactor_with_image(temp_path):
+                return "Image set and ReActor activated"
+            else:
+                return "Could not setup ReActor"
+
+        except Exception as e:
+            error_msg = f"Error processing image: {str(e)}"
+            print(f"[Photo Message] {error_msg}")
+            print(traceback.format_exc())
+            return error_msg
+
     except Exception as e:
-        error_msg = f"Error preparing image: {str(e)}"
+        error_msg = f"Error in send_image_to_tab: {str(e)}"
         print(f"[Photo Message] {error_msg}")
         print(traceback.format_exc())
         return error_msg
