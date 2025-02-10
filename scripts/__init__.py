@@ -599,35 +599,27 @@ def setup_reactor_with_image(image_data):
             reactor_source = None
             reactor_checkbox = None
 
-            # First, find the img2img tab
-            img2img_tab = None
-            for component in shared.gradio['tabs']:
-                if hasattr(component, 'elem_id') and component.elem_id == "tab_img2img":
-                    img2img_tab = component
-                    print("[Photo Message] Found img2img tab")
-                    break
-
-            if not img2img_tab:
-                print("[Photo Message] Could not find img2img tab")
-                return False
-
-            # Search for ReActor components in img2img tab
-            print("[Photo Message] Searching for ReActor components in img2img tab...")
-            for component in img2img_tab.children:
-                if hasattr(component, 'elem_id'):
-                    elem_id = str(component.elem_id)
-                    print(f"[Photo Message] Checking component: {elem_id}")
-                    
-                    # Find ReActor checkbox
-                    if 'reactor_enabled' in elem_id.lower():
-                        reactor_checkbox = component
-                        print(f"[Photo Message] Found ReActor checkbox: {elem_id}")
-                        reactor_found = True
-                    
-                    # Find ReActor source image component
-                    elif 'reactor_source' in elem_id.lower() and isinstance(component, gr.Image):
-                        reactor_source = component
-                        print(f"[Photo Message] Found ReActor source image: {elem_id}")
+            # Get all components from img2img
+            print("[Photo Message] Searching for ReActor components...")
+            for script_component in img2img.scripts_img2img.alwayson_scripts:
+                try:
+                    if hasattr(script_component, 'elem_id'):
+                        elem_id = str(script_component.elem_id)
+                        print(f"[Photo Message] Checking component: {elem_id}")
+                        
+                        # Find ReActor checkbox
+                        if 'reactor_enabled' in elem_id.lower():
+                            reactor_checkbox = script_component
+                            print(f"[Photo Message] Found ReActor checkbox: {elem_id}")
+                            reactor_found = True
+                        
+                        # Find ReActor source image component
+                        elif 'reactor_source' in elem_id.lower() and isinstance(script_component, gr.Image):
+                            reactor_source = script_component
+                            print(f"[Photo Message] Found ReActor source image: {elem_id}")
+                except Exception as e:
+                    print(f"[Photo Message] Error checking component: {e}")
+                    continue
 
             if not reactor_found:
                 print("[Photo Message] Could not find ReActor's components")
