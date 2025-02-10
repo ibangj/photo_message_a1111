@@ -219,28 +219,41 @@ class PhotoMessage:
         # Handle the image data
         try:
             if isinstance(image_data, str):
+                print(f"[Photo Message] Image data length: {len(image_data)}")
+                print(f"[Photo Message] First 100 chars: {image_data[:100]}")
+                
                 # Remove any existing prefix to ensure clean data
                 if 'base64,' in image_data:
                     print("[Photo Message] Removing data URL prefix")
-                    self.image_data = image_data.split('base64,')[1]
-                else:
-                    self.image_data = image_data
+                    image_data = image_data.split('base64,')[1]
                 
                 # Add padding if needed
-                padding = len(self.image_data) % 4
+                padding = len(image_data) % 4
                 if padding:
                     print("[Photo Message] Adding base64 padding")
-                    self.image_data += '=' * (4 - padding)
+                    image_data += '=' * (4 - padding)
                 
                 # Validate base64 data
                 try:
                     print("[Photo Message] Validating base64 data")
-                    image_bytes = base64.b64decode(self.image_data)
+                    image_bytes = base64.b64decode(image_data)
+                    print(f"[Photo Message] Decoded bytes length: {len(image_bytes)}")
+                    
+                    # Try to create a PIL Image to validate
                     test_image = Image.open(io.BytesIO(image_bytes))
                     test_image.verify()
                     print("[Photo Message] Successfully validated image data")
-                except Exception as e:
-                    print(f"[Photo Message] Warning: Image validation failed: {e}")
+                    
+                    # Store the validated base64 data
+                    self.image_data = image_data
+                except base64.binascii.Error as be:
+                    print(f"[Photo Message] Base64 decode error: {be}")
+                    print(f"[Photo Message] Base64 string preview: {image_data[:100]}...")
+                    self.image_data = None
+                except PIL.UnidentifiedImageError as pie:
+                    print(f"[Photo Message] PIL error: {pie}")
+                    print(f"[Photo Message] First few bytes: {image_bytes[:20].hex()}")
+                    self.image_data = None
             else:
                 print(f"[Photo Message] Unsupported image data type: {type(image_data)}")
                 self.image_data = None
@@ -420,48 +433,98 @@ def update_photo_list():
     df = pd.DataFrame(photo_data, columns=["Time", "Name", "Message", "Sent"])
     return df
 
-def on_select(evt: gr.SelectData, current_value):
+def on_photo_select(evt: gr.SelectData, current_value):
     """Handle selection of a photo from the list"""
     try:
+        print("[Photo Message] Photo selection started")
         print(f"[Photo Message] Selection event: {evt.index}")
-        print(f"[Photo Message] Current dataframe value:\n{current_value}")
         
         if current_value is None or len(current_value.index) == 0:
             print("[Photo Message] No data in DataFrame")
-            return None
+            return None, None
             
-        try:
-            row_idx = evt.index[0]  # Get the row index from the selection event
-            if row_idx >= len(current_value.index):
-                print("[Photo Message] Selected index out of range")
-                return None
+        row_idx = evt.index[0]
+        if row_idx >= len(current_value.index):
+            print("[Photo Message] Selected index out of range")
+            return None, None
+            
+        timestamp = current_value.iloc[row_idx, 0]
+        print(f"[Photo Message] Selected timestamp: {timestamp}")
+        
+        # Find the photo in our list
+        for photo in photos:
+            if photo.timestamp == timestamp:
+                print(f"[Photo Message] Found matching photo: {photo.name}")
                 
-            # Get timestamp from the first column
-            timestamp = current_value.iloc[row_idx, 0]
-            print(f"[Photo Message] Selected timestamp: {timestamp}")
-            
-            # Debug info
-            print(f"[Photo Message] Current photos in memory: {len(photos)}")
-            for p in photos:
-                print(f"[Photo Message] Stored photo: {p.timestamp}, {p.name}")
-            
-            # Get the photo using the timestamp
-            image = get_photo_by_timestamp(timestamp)
-            if image:
-                print("[Photo Message] Successfully loaded selected image")
-                return image
-            else:
-                print("[Photo Message] Could not find image for timestamp")
-                return None
+                # Create info dict with metadata and sent status
+                photo_info = {
+                    'timestamp': photo.timestamp,
+                    'name': photo.name,
+                    'message': photo.message,
+                    'is_sent': photo.is_sent
+                }
                 
-        except IndexError as ie:
-            print(f"[Photo Message] Index error: {ie}")
-            return None
-            
+                # Get the image
+                try:
+                    print("[Photo Message] Processing image data...")
+                    print(f"[Photo Message] Image data length: {len(photo.image_data)}")
+                    
+                    # Handle base64 data
+                    image_data = photo.image_data
+                    if isinstance(image_data, str):
+                        # Remove data URL prefix if present
+                        if 'base64,' in image_data:
+                            print("[Photo Message] Removing data URL prefix")
+                            image_data = image_data.split('base64,')[1]
+                        
+                        # Add padding if needed
+                        padding = len(image_data) % 4
+                        if padding:
+                            print("[Photo Message] Adding base64 padding")
+                            image_data += '=' * (4 - padding)
+                        
+                        try:
+                            # Decode base64
+                            print("[Photo Message] Decoding base64 data")
+                            image_bytes = base64.b64decode(image_data)
+                            print(f"[Photo Message] Decoded bytes length: {len(image_bytes)}")
+                            
+                            # Create PIL Image
+                            print("[Photo Message] Creating PIL Image")
+                            image = Image.open(io.BytesIO(image_bytes))
+                            
+                            # Convert to RGB if needed
+                            if image.mode != 'RGB':
+                                print(f"[Photo Message] Converting from {image.mode} to RGB")
+                                image = image.convert('RGB')
+                            
+                            print("[Photo Message] Successfully created image")
+                            return image, photo_info
+                            
+                        except base64.binascii.Error as be:
+                            print(f"[Photo Message] Base64 decode error: {be}")
+                            print(f"[Photo Message] Base64 string preview: {image_data[:100]}...")
+                            return None, None
+                        except PIL.UnidentifiedImageError as pie:
+                            print(f"[Photo Message] PIL error: {pie}")
+                            print(f"[Photo Message] First few bytes: {image_bytes[:20].hex()}")
+                            return None, None
+                    else:
+                        print(f"[Photo Message] Unsupported image data type: {type(image_data)}")
+                        return None, None
+                        
+                except Exception as e:
+                    print(f"[Photo Message] Error processing image: {e}")
+                    print(traceback.format_exc())
+                    return None, None
+                    
+        print(f"[Photo Message] No matching photo found for timestamp: {timestamp}")
+        return None, None
+        
     except Exception as e:
-        print(f"[Photo Message] Error in on_select: {str(e)}")
+        print(f"[Photo Message] Error in photo selection: {e}")
         print(traceback.format_exc())
-        return None
+        return None, None
 
 def setup_reactor_with_image(image_data):
     """
