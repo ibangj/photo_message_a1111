@@ -565,14 +565,32 @@ def setup_reactor_with_image(image_data):
 
             # Find ReActor in loaded scripts
             reactor_script = None
+            print("[Photo Message] Searching for ReActor script...")
+            print(f"[Photo Message] Number of loaded scripts: {len(scripts.scripts_data)}")
+            
             for script in scripts.scripts_data:
-                if hasattr(script, 'script_class') and script.script_class.__module__ == "scripts.reactor_faceswap":
-                    reactor_script = script
-                    print("[Photo Message] Found ReActor script")
-                    break
+                try:
+                    if hasattr(script, 'script_class'):
+                        module_name = script.script_class.__module__.lower()
+                        class_name = script.script_class.__name__.lower()
+                        print(f"[Photo Message] Checking script - Module: {module_name}, Class: {class_name}")
+                        
+                        if 'reactor' in module_name or 'reactor' in class_name:
+                            reactor_script = script
+                            print(f"[Photo Message] Found ReActor script: {script.script_class.__module__}.{script.script_class.__name__}")
+                            break
+                except Exception as e:
+                    print(f"[Photo Message] Error checking script: {e}")
+                    continue
             
             if not reactor_script:
-                print("[Photo Message] ReActor extension not found")
+                print("[Photo Message] ReActor extension not found. Available scripts:")
+                for script in scripts.scripts_data:
+                    try:
+                        if hasattr(script, 'script_class'):
+                            print(f"- {script.script_class.__module__}.{script.script_class.__name__}")
+                    except:
+                        print("- [Error getting script info]")
                 return False
 
             # Find and update ReActor's components
