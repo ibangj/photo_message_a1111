@@ -566,8 +566,9 @@ def setup_reactor_with_image(image_data):
             # Find ReActor in loaded scripts
             reactor_script = None
             for script in scripts.scripts_data:
-                if script.script_class.__module__ == "scripts.reactor_faceswap":
+                if hasattr(script, 'script_class') and script.script_class.__module__ == "scripts.reactor_faceswap":
                     reactor_script = script
+                    print("[Photo Message] Found ReActor script")
                     break
             
             if not reactor_script:
@@ -576,57 +577,79 @@ def setup_reactor_with_image(image_data):
 
             # Find and update ReActor's components
             reactor_found = False
+            reactor_source = None
+            reactor_checkbox = None
+
+            # First, find the img2img tab
+            img2img_tab = None
             for component in shared.gradio['tabs']:
                 if hasattr(component, 'elem_id') and component.elem_id == "tab_img2img":
+                    img2img_tab = component
                     print("[Photo Message] Found img2img tab")
+                    break
+
+            if not img2img_tab:
+                print("[Photo Message] Could not find img2img tab")
+                return False
+
+            # Search for ReActor components in img2img tab
+            for component in img2img_tab.children:
+                if hasattr(component, 'elem_id'):
+                    elem_id = str(component.elem_id)
+                    print(f"[Photo Message] Checking component: {elem_id}")
                     
                     # Find ReActor checkbox
-                    for child in component.children:
-                        if hasattr(child, 'elem_id') and 'ReActor' in str(child.elem_id):
-                            print(f"[Photo Message] Found ReActor component: {child.elem_id}")
-                            try:
-                                # Enable ReActor
-                                if hasattr(child, 'value'):
-                                    child.value = True
-                                    print("[Photo Message] Enabled ReActor checkbox")
-                                    reactor_found = True
-                                    break
-                            except Exception as e:
-                                print(f"[Photo Message] Error enabling ReActor: {str(e)}")
-                                print(traceback.format_exc())
+                    if 'reactor_enabled' in elem_id.lower():
+                        reactor_checkbox = component
+                        print(f"[Photo Message] Found ReActor checkbox: {elem_id}")
+                        reactor_found = True
                     
-                    if reactor_found:
-                        # Find source image component
-                        for child in component.children:
-                            if isinstance(child, gr.Image) and hasattr(child, 'elem_id') and 'reactor_source' in str(child.elem_id):
-                                print("[Photo Message] Found ReActor source image component")
-                                try:
-                                    # Create temporary file
-                                    temp_dir = os.path.join(tempfile.gettempdir(), "photo_message")
-                                    os.makedirs(temp_dir, exist_ok=True)
-                                    temp_path = os.path.join(temp_dir, f"reactor_source_{int(time.time())}.jpg")
-                                    
-                                    # Convert base64 to file
-                                    if img_data.startswith('data:'):
-                                        img_data = img_data.split('base64,')[1]
-                                    
-                                    # Decode and save as file
-                                    img_bytes = base64.b64decode(img_data)
-                                    with open(temp_path, 'wb') as f:
-                                        f.write(img_bytes)
-                                    
-                                    # Update using file path
-                                    child.update(value=temp_path)
-                                    print("[Photo Message] Successfully updated ReActor image")
-                                    return True
-                                except Exception as e:
-                                    print(f"[Photo Message] Error updating ReActor: {str(e)}")
-                                    print(traceback.format_exc())
-                                    return False
-            
+                    # Find ReActor source image component
+                    elif 'reactor_source' in elem_id.lower() and isinstance(component, gr.Image):
+                        reactor_source = component
+                        print(f"[Photo Message] Found ReActor source image: {elem_id}")
+
             if not reactor_found:
                 print("[Photo Message] Could not find ReActor's components")
                 return False
+
+            # Enable ReActor if checkbox found
+            if reactor_checkbox and hasattr(reactor_checkbox, 'update'):
+                try:
+                    reactor_checkbox.update(value=True)
+                    print("[Photo Message] Enabled ReActor checkbox")
+                except Exception as e:
+                    print(f"[Photo Message] Error enabling ReActor: {str(e)}")
+                    print(traceback.format_exc())
+
+            # Set source image if component found
+            if reactor_source and hasattr(reactor_source, 'update'):
+                try:
+                    # Create temporary file
+                    temp_dir = os.path.join(tempfile.gettempdir(), "photo_message")
+                    os.makedirs(temp_dir, exist_ok=True)
+                    temp_path = os.path.join(temp_dir, f"reactor_source_{int(time.time())}.jpg")
+                    
+                    # Convert base64 to file
+                    if img_data.startswith('data:'):
+                        img_data = img_data.split('base64,')[1]
+                    
+                    # Decode and save as file
+                    img_bytes = base64.b64decode(img_data)
+                    with open(temp_path, 'wb') as f:
+                        f.write(img_bytes)
+                    
+                    # Update using file path
+                    reactor_source.update(value=temp_path)
+                    print("[Photo Message] Successfully updated ReActor source image")
+                    return True
+                except Exception as e:
+                    print(f"[Photo Message] Error updating ReActor source: {str(e)}")
+                    print(traceback.format_exc())
+                    return False
+
+            print("[Photo Message] Could not update ReActor components")
+            return False
 
         except Exception as e:
             print(f"[Photo Message] Error in image processing: {str(e)}")
