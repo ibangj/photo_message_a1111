@@ -1144,7 +1144,7 @@ def on_ui_tabs():
                     await new Promise(r => setTimeout(r, 500));  // Wait for tab switch
                     
                     try {
-                        // First set the image in img2img (using the working code)
+                        // First set the image in img2img
                         const img2imgImage = gradioApp().querySelector('#img2img_image');
                         if (!img2imgImage) {
                             console.error("[Photo Message] Could not find img2img_image element");
@@ -1198,10 +1198,40 @@ def on_ui_tabs():
                             uploadButton.dispatchEvent(new Event('input', { bubbles: true }));
                             
                             // Wait for image to be set
-                            await new Promise(r => setTimeout(r, 500));
+                            await new Promise(r => setTimeout(r, 1000));
                             
-                            // Let the Python code handle ReActor setup
-                            return "Image set successfully";
+                            // Find and enable ReActor
+                            const reactorCheckbox = Array.from(gradioApp().querySelectorAll('input[type="checkbox"]'))
+                                .find(cb => cb.id && cb.id.toLowerCase().includes('reactor'));
+                            
+                            if (reactorCheckbox) {
+                                console.log("[Photo Message] Found ReActor checkbox");
+                                reactorCheckbox.checked = true;
+                                reactorCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                                
+                                // Wait for ReActor to initialize
+                                await new Promise(r => setTimeout(r, 500));
+                                
+                                // Find ReActor source image
+                                const reactorSource = Array.from(gradioApp().querySelectorAll('.gradio-image'))
+                                    .find(img => img.id && img.id.toLowerCase().includes('reactor_source'));
+                                
+                                if (reactorSource) {
+                                    console.log("[Photo Message] Found ReActor source image");
+                                    const sourceUpload = reactorSource.querySelector('input[type="file"]');
+                                    if (sourceUpload) {
+                                        console.log("[Photo Message] Setting ReActor source image");
+                                        const dt = new DataTransfer();
+                                        dt.items.add(file);
+                                        sourceUpload.files = dt.files;
+                                        sourceUpload.dispatchEvent(new Event('change', { bubbles: true }));
+                                        sourceUpload.dispatchEvent(new Event('input', { bubbles: true }));
+                                        return "Image set and ReActor enabled";
+                                    }
+                                }
+                            }
+                            
+                            return "Image set but ReActor setup incomplete";
                         } else {
                             console.error("[Photo Message] Could not find upload button");
                             return "Could not find upload button";
