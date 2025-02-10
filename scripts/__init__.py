@@ -424,12 +424,13 @@ def format_base64_image(img_data):
         print(traceback.format_exc())
         return None
 
-def send_to_api(source_photo_data, generated_image):
+def send_to_api(source_photo_data, generated_image, current_url):
     if source_photo_data is None or generated_image is None:
         return "Please select both a source photo and a generated image"
         
     try:
         print("[Photo Message] Sending images to API...")
+        print(f"[Photo Message] Using display app URL: {current_url}")
         
         # Get metadata from source photo
         source_photo = None
@@ -481,7 +482,7 @@ def send_to_api(source_photo_data, generated_image):
             # Fallback to HTTP endpoint
             print("[Photo Message] WebSocket not available, sending via HTTP...")
             response = requests.post(
-                "http://localhost:5001/new_photo",
+                f"{current_url}/new_photo",
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=10
@@ -525,8 +526,29 @@ def on_ui_tabs():
         import modules.scripts as scripts_module
         
         with gr.Blocks(analytics_enabled=False) as photo_message_tab:
+            # Store display app URL in state
+            display_app_url = gr.State(value="http://localhost:5001")
+            
             with gr.Row(equal_height=True):
                 gr.Markdown("## 📸 Photo Message Extension")
+            
+            # Settings row
+            with gr.Row(variant="panel"):
+                with gr.Column(scale=1):
+                    display_app_input = gr.Textbox(
+                        label="Display App URL",
+                        placeholder="Enter display app URL (e.g., localhost:5001)",
+                        value="localhost:5001",
+                        show_label=True,
+                        elem_id="display_app_url"
+                    )
+                    connect_btn = gr.Button("🔌 Connect", size="sm", variant="primary")
+                with gr.Column(scale=2):
+                    connection_status = gr.Textbox(
+                        label="Connection Status",
+                        value="Not connected",
+                        interactive=False
+                    )
             
             # Main content area
             with gr.Row(variant="panel"):
@@ -793,7 +815,7 @@ def on_ui_tabs():
             # Connect send button to API
             send_selected_btn.click(
                 fn=send_to_api,
-                inputs=[selected_photo_info, selected_generated_image],
+                inputs=[selected_photo_info, selected_generated_image, display_app_url],
                 outputs=[send_status]
             ).then(
                 fn=update_photo_list,
@@ -933,6 +955,41 @@ def on_ui_tabs():
             refresh_generated_btn.click(
                 fn=get_generated_images,
                 outputs=[generated_gallery]
+            )
+            
+            def update_display_app_url(url):
+                """Update the display app URL and attempt to reconnect"""
+                try:
+                    # Format the URL properly
+                    if not url.startswith('http://'):
+                        url = f"http://{url}"
+                    
+                    print(f"[Photo Message] Updating display app URL to: {url}")
+                    
+                    # Try to connect to new URL
+                    try:
+                        if hasattr(sio, 'connected') and sio.connected:
+                            sio.disconnect()
+                        
+                        time.sleep(1)  # Wait before reconnecting
+                        sio.connect(url, wait_timeout=5, wait=True)
+                        print("[Photo Message] Successfully connected to new URL")
+                        return url, "Connected successfully"
+                    except Exception as e:
+                        error_msg = f"Could not connect to {url}: {str(e)}"
+                        print(f"[Photo Message] {error_msg}")
+                        return url, error_msg
+                        
+                except Exception as e:
+                    error_msg = f"Error updating URL: {str(e)}"
+                    print(f"[Photo Message] {error_msg}")
+                    return url, error_msg
+            
+            # Connect button handler
+            connect_btn.click(
+                fn=update_display_app_url,
+                inputs=[display_app_input],
+                outputs=[display_app_url, connection_status]
             )
             
         print("[Photo Message] UI tab created successfully")
